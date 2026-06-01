@@ -1,29 +1,36 @@
 <div align="center">
 
-# ▰ Pragma
+# Pragma
 
-### Describe an app in plain English. Get a complete, runnable project on your machine.
+### Describe an app in plain English. Get working code on your machine.
 
-[![Go](https://img.shields.io/badge/Go-1.24-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://go.dev)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![SvelteKit](https://img.shields.io/badge/SvelteKit-2.0-FF3E00?style=for-the-badge&logo=svelte&logoColor=white)](https://kit.svelte.dev)
-[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
-[![Cost](https://img.shields.io/badge/AI-Cost%20effective-brightgreen?style=for-the-badge)](https://platform.deepseek.com)
-[![Privacy](https://img.shields.io/badge/Your%20Code-Never%20Leaves%20Your%20Machine-blue?style=for-the-badge)](#privacy)
-
-**No subscription. No cloud. No coding knowledge required.**
-
-*APIs, database, auth, Docker, tests — and an optional React/Next.js UI when your idea needs one — generated locally with bring-your-own AI keys.*
-
-<!-- demo video here -->
+[![Go](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go&logoColor=white)](https://go.dev)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://python.org)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
 
 </div>
 
 ---
 
-## For Everyone — Get Running in 5 Minutes
+## What is Pragma?
 
-You do not need to install Go or Node to **run** Pragma. Download the binary, set up the Python daemon once, add two API keys, and describe your app.
+Pragma is a tool that turns plain English descriptions into complete applications. You tell it what you want to build, it asks a few clarifying questions, then generates the source code: APIs, databases, authentication, Docker configs, and tests.
+
+No coding experience required. No subscription. Everything runs locally on your machine.
+
+**Example:** Type "A leave-management app where employees submit time-off requests and managers approve them" and Pragma generates:
+
+- A REST API with user authentication and role-based permissions
+- Database models for employees, leave requests, and approvals
+- Docker Compose setup so you can run it immediately
+- A test suite covering the main workflows
+- A README explaining how to use it
+
+You own the code. It lives on your disk, not in someone's cloud.
+
+## Get Started
+
+You don't need to install Go or Node to run Pragma. Download the binary, set up the Python daemon once, add two API keys, and describe your app.
 
 ### 1. Download Pragma
 
@@ -67,10 +74,10 @@ Your browser opens at `http://localhost:3777`. On **WSL**, the URL is printed in
 
 On first run, the **Setup Guide** walks you through both keys step by step.
 
-**DeepSeek** (required — powers code generation; pay-as-you-go, typically cost-effective per project):
+**DeepSeek** (required — powers code generation; pay-as-you-go):
 
 1. Sign up at [platform.deepseek.com](https://platform.deepseek.com)
-2. Top Up → add a small credit balance (no subscription)
+2. Top Up → add a small credit balance (no subscription). $2 is enough for many projects.
 3. API Keys → Create key → paste it in the Setup Guide
 
 **Groq** (required — free, enables image analysis and faster chat):
@@ -114,59 +121,58 @@ Updates the binary **and** the Python daemon from GitHub Releases.
 
 ---
 
-## Why Pragma exists
+## Who is this for?
 
-Many AI app builders excel at a polished UI in the browser but leave you without a serious server, database, and deployment story you own. IDE copilots assume you already know how to code. Heavy agents cost like hiring help and still run in someone else's cloud.
+Pragma is designed for people who have ideas for applications but don't want to learn to code or hire developers. It's also useful for developers who want to prototype quickly or generate boilerplate code.
 
-Pragma is different: **you describe the product in plain English, and a complete, runnable project lands in a folder on your machine.** Not a scaffold. Not a pile of `TODO`s. Routes, models, auth patterns, Docker, and tests — reviewed against a spec before you approve generation.
+You describe what you want in plain English, and Pragma generates working source code: APIs, databases, authentication, Docker configs, and tests. You review the plan before generation starts, and you can adjust it if needed.
 
-It stays **cost-effective** because you bring your own DeepSeek and Groq keys (pay-as-you-go, no Pragma subscription) and generation runs locally under your control.
+The code runs on your machine. You provide DeepSeek and Groq API keys (pay-as-you-go, typically a few cents per project). No Pragma subscription required.
 
 ---
 
-## How it stacks up
+## How it compares
 
-| | **Pragma** | Lovable | Bolt | Cursor | Devin |
+| | **Pragma** | Lovable | Bolt.new | Cursor | Devin |
 |---|---|---|---|---|---|
-| **Cost model** | **Pay-as-you-go AI keys; no Pragma subscription** | Monthly subscription | Monthly subscription | Monthly subscription | High monthly |
-| **What you get** | **Full API + DB + auth + Docker + tests; optional Next.js UI** | Hosted full-stack (React + Supabase) | In-browser full-stack (JS) | You write it | Agent-driven stack |
-| **Where your code lives** | **Your disk, always** | Their cloud | Their cloud | Your machine | Their cloud |
-| **Runs offline after generation** | **Yes (your repo)** | No | No | Yes | No |
-| **Usable with little coding skill** | **Yes (guided flow)** | Yes | Partly | No | Partly |
-| **Resumes after a crash** | **Yes — checkpointed** | n/a | n/a | n/a | Partial |
-
-Pragma is strongest when you want **real source code on disk**, a **proper backend**, and **optional full-stack web** — without locking the project inside a hosted builder.
+| What it is | Plain English to complete app generator | Plain English to hosted app builder | Plain English to hosted app builder | IDE with AI assistance | AI software engineer |
+| Target user | Non-coders and developers | Non-coders | Non-coders | Developers | Engineering teams |
+| Where code lives | Your disk, always | Their cloud | Their cloud | Your machine | Their cloud (PRs to your repo) |
+| Cost model | Pay-as-you-go AI keys | Monthly subscription | Monthly subscription | Monthly subscription | Enterprise pricing |
+| What you get | Complete source code (API, DB, auth, Docker, tests) | Hosted app with backend | Hosted app with backend | AI-assisted coding | Autonomous task execution |
+| Runs offline | Yes | No | No | Yes (IDE only) | No |
+| Own the code | Yes, full source | Export possible | Export possible | Yes (your code) | Yes (via PRs) |
 
 ---
 
-## What you actually get
+## What you get
 
-Type *"A leave-management app where employees submit time-off requests and managers approve them"* and Pragma can hand back:
+For example, if you describe "A leave-management app where employees submit time-off requests and managers approve them", Pragma generates:
 
-- **Every source file, fully implemented** — no stubs, no `TODO`, no placeholder functions
-- **Database models + migrations** — PostgreSQL or SQLite
-- **API routes with auth** — JWT, OAuth patterns, and session options depending on stack
-- **OpenAPI 3.0 specification** — API documentation generated with the project
-- **CI workflows** — GitHub Actions for lint, test, and deploy stubs where applicable
-- **`Dockerfile` + `docker-compose.yml`** — run the generated app locally
-- **A passing test suite** — generated and executed before delivery when the pipeline completes
-- **A plain-English README** in the output folder — written for non-developers where possible
+- Complete source files for your application
+- Database models and migrations (PostgreSQL or SQLite)
+- API routes with authentication (JWT, OAuth, or session-based)
+- OpenAPI 3.0 specification (API documentation)
+- CI workflows (GitHub Actions for linting and testing)
+- Dockerfile and docker-compose.yml to run the app locally
+- A test suite covering the main workflows
+- A README explaining how to use the generated project
 
-**Stacks (auto-selected from your description; mention preferences in plain English):**
+Available stacks (auto-selected from your description, or specify your preference):
 
 | Profile | Stack | Database |
 |---------|-------|----------|
-| `fastapi-async` | Python 3.12 · FastAPI · SQLAlchemy 2.0 · Alembic | PostgreSQL |
-| `fastapi-async-sqlite` | Python 3.12 · FastAPI · SQLAlchemy 2.0 · Alembic | **SQLite** |
-| `express-drizzle` | TypeScript · Express 5 · Drizzle ORM | PostgreSQL |
-| `express-drizzle-sqlite` | TypeScript · Express 5 · Drizzle ORM | **SQLite** |
-| `express-prisma` | TypeScript · Express 5 · Prisma | PostgreSQL |
-| `express-prisma-sqlite` | TypeScript · Express 5 · Prisma | **SQLite** |
-| `hono-drizzle` | TypeScript · Hono · Drizzle ORM (edge-ready) | PostgreSQL |
-| `hono-drizzle-sqlite` | TypeScript · Hono · Drizzle ORM (edge-ready) | **SQLite** |
-| `nextjs-app` | TypeScript · Next.js App Router · Drizzle | PostgreSQL |
-| `fiber-sqlc` | Go · Fiber v3 · sqlc · pgx | PostgreSQL |
-| `fiber-sqlc-sqlite` | Go · Fiber v3 · sqlc | **SQLite** |
+| `fastapi-async` | Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic | PostgreSQL |
+| `fastapi-async-sqlite` | Python 3.12, FastAPI, SQLAlchemy 2.0, Alembic | SQLite |
+| `express-drizzle` | TypeScript, Express 5, Drizzle ORM | PostgreSQL |
+| `express-drizzle-sqlite` | TypeScript, Express 5, Drizzle ORM | SQLite |
+| `express-prisma` | TypeScript, Express 5, Prisma | PostgreSQL |
+| `express-prisma-sqlite` | TypeScript, Express 5, Prisma | SQLite |
+| `hono-drizzle` | TypeScript, Hono, Drizzle ORM (edge-ready) | PostgreSQL |
+| `hono-drizzle-sqlite` | TypeScript, Hono, Drizzle ORM (edge-ready) | SQLite |
+| `nextjs-app` | TypeScript, Next.js App Router, Drizzle | PostgreSQL |
+| `fiber-sqlc` | Go, Fiber v3, sqlc, pgx | PostgreSQL |
+| `fiber-sqlc-sqlite` | Go, Fiber v3, sqlc | SQLite |
 
 ---
 
@@ -185,15 +191,15 @@ flowchart TD
     I --> J[Complete codebase on your disk]
 ```
 
-1. **Ideation** — You describe what you want; Pragma asks focused questions. Powered by Groq on the free tier.
-2. **Research** — Pulls current documentation for libraries in your stack so APIs are not hallucinated from old blog posts.
-3. **Spec** — A multi-pass compile produces a **Build Contract**: files, signatures, dependencies, and edge cases.
-4. **Review** — You see the plan and estimates **before** full codegen runs. Approve or adjust.
-5. **Generate** — Workers write files in dependency order; each file is checked against the contract.
-6. **Heal** — Failed validations are repaired automatically when possible.
-7. **Verify** — Coverage, security scan, static analysis, tests, `git init` — then the folder is yours.
+1. **Ideation** — You describe what you want; Pragma asks clarifying questions (powered by Groq)
+2. **Research** — Pulls current documentation for libraries in your stack
+3. **Spec** — Generates a Build Contract: files, signatures, dependencies, and edge cases
+4. **Review** — You see the plan and estimates before generation starts. Approve or adjust.
+5. **Generate** — Writes files in dependency order; each file is checked against the contract
+6. **Heal** — Failed validations are repaired automatically when possible
+7. **Verify** — Runs tests, security scans, and static analysis, then initializes git
 
-Every step is **checkpointed**. Close the tab or lose power — resume where you left off.
+Every step is checkpointed. If you close the tab or lose power, you can resume where you left off.
 
 ---
 
@@ -212,15 +218,15 @@ Go Binary  ──  HTTP/WS server · pipeline · budget caps · checkpoints · d
    ▼
 Python Daemon  ──  LLM calls · spec compiler · parallel codegen · tree-sitter · heal · research
    │
-   ├──▶  DeepSeek API   ──  spec + code generation   (pay-as-you-go, cost-effective per project)
+   ├──▶  DeepSeek API   ──  spec + code generation   (pay-as-you-go)
    └──▶  Groq API       ──  ideation · vision · healing   (free tier)
 ```
 
-The Go binary embeds the compiled UI, so `pragma` is **one file you can copy** — no separate frontend server or `node_modules` on the machine that only runs Pragma.
+The Go binary embeds the compiled UI, so `pragma` is a single file you can copy — no separate frontend server or node_modules required.
 
-- **Go** — server, orchestration, budget enforcement, checkpointing, keyring integration.
-- **Python** — all model calls, spec compilation, codegen, conformance, healing, research, audits.
-- **Svelte** — live progress, spec review, setup guide, and approval gates.
+- **Go** — server, orchestration, budget enforcement, checkpointing, keyring integration
+- **Python** — all model calls, spec compilation, codegen, conformance, healing, research, audits
+- **Svelte** — live progress, spec review, setup guide, and approval gates
 
 ---
 
@@ -246,13 +252,13 @@ cd pragma
 pragma
 ```
 
-The browser opens at `localhost:3777`. The **Setup Guide** runs on first launch until both API keys are saved.
+The browser opens at `localhost:3777`. The Setup Guide runs on first launch until both API keys are saved.
 
-> **What you'll need:**
-> - **DeepSeek key** — [platform.deepseek.com](https://platform.deepseek.com). Pay-as-you-go; Pragma defaults to a **$0.25 per project** and **$2.00 total** spend cap so bills stay predictable.
-> - **Groq key** — [console.groq.com](https://console.groq.com). Free tier; no credit card for signup.
+What you'll need:
+- DeepSeek key — [platform.deepseek.com](https://platform.deepseek.com). Pay-as-you-go; $2 (the minimum top-up) covers many projects. Pragma defaults to a $0.25 per project and $2.00 total spend cap.
+- Groq key — [console.groq.com](https://console.groq.com). Free tier; no credit card required.
 
-After keys are set, describe your project. Pragma picks the stack; override in natural language if you care (e.g. “Next.js dashboard”, “Python API only”, “use PostgreSQL”).
+After keys are set, describe your project. Pragma picks the stack; override in natural language if you prefer (e.g. “Next.js dashboard”, “Python API only”, “use PostgreSQL”).
 
 ---
 
@@ -267,6 +273,8 @@ pragma doctor                    # Check Python, daemon, keys, Docker
 pragma upgrade                   # Self-update binary + daemon (SHA256 verified)
 pragma clean                     # Remove old run directories (keeps 5 most recent)
 pragma publish                   # Init git + print push instructions for a generated project
+pragma --budget 0.50             # Override per-run budget cap for this run
+pragma --version                 # Print version and exit
 ```
 
 ---
@@ -293,7 +301,7 @@ directory = "./output"     # Where generated projects are written
 
 Generated source code stays on your disk. Pragma does not host your project or run a Pragma cloud backend.
 
-The only data that leaves your machine is what you send to **DeepSeek** and **Groq** under your own API keys — the same as calling those APIs directly. There is no Pragma account and no telemetry. Keys are stored in your OS keyring when available, with a restricted fallback file under `~/.pragma/` on setups without a keyring (e.g. some WSL/CI environments).
+The only data that leaves your machine is what you send to DeepSeek and Groq under your own API keys — the same as calling those APIs directly. There is no Pragma account and no telemetry. Keys are stored in your OS keyring when available, with a restricted fallback file under `~/.pragma/` on setups without a keyring (e.g. some WSL/CI environments).
 
 ---
 
