@@ -18,10 +18,15 @@ Pragma is a tool that turns plain English descriptions into complete application
 
 No coding experience required. No subscription. Everything runs locally on your machine.
 
-**Example:** Type "A leave-management app where employees submit time-off requests and managers approve them" and Pragma generates:
+**Example:** Type *"A freelancer client portal where I share project updates with clients, they approve milestones, I send invoices with line items, they pay online, and we both see a dashboard with progress and payment history"* and Pragma generates:
 
-- A REST API with user authentication and role-based permissions
-- Database models for employees, leave requests, and approvals
+- Multi-role authentication (freelancer and client accounts)
+- Project and milestone tracking with approval workflows
+- Invoice generation with line items and PDF export
+- Online payment integration
+- Real-time dashboard with charts for both sides
+- File sharing for deliverables
+- Email notifications for milestones, invoices, and payments
 - Docker Compose setup so you can run it immediately
 - A test suite covering the main workflows
 - A README explaining how to use it
@@ -89,15 +94,15 @@ On first run, the **Setup Guide** walks you through both keys step by step.
 
 ### 5. Describe Your App
 
-Type what you want in plain English. Pragma **auto-selects** a sensible stack from your description (you can steer it in text, e.g. “use Node and React” or “backend only”), asks a few questions, then generates:
+Type what you want in plain English. Pragma auto-selects a sensible stack from your description (you can steer it in text, e.g. “use Node and React” or “backend only”), asks a few questions, then generates:
 
 - A complete REST API (Python, Node.js, or Go)
-- **Or** a full-stack web app with **Next.js** when your description implies a UI
+- Or a full-stack web app with Next.js when your description implies a UI
 - Database setup (PostgreSQL or SQLite)
 - Docker Compose so you can run it immediately
 - Tests, security checks, and a plain-English README for the output folder
 
-> **Scope:** Pragma targets **web backends and full-stack web apps**. It does not generate native mobile apps (iOS/Android binaries).
+Scope: Pragma targets web backends and full-stack web apps. It does not generate native mobile apps (iOS/Android binaries).
 
 ### Upload an Image (Optional)
 
@@ -117,7 +122,7 @@ Checks Python, the daemon, your API keys, Docker, and network connectivity.
 pragma upgrade
 ```
 
-Updates the binary **and** the Python daemon from GitHub Releases.
+Updates the binary and the Python daemon from GitHub Releases.
 
 ---
 
@@ -147,7 +152,7 @@ The code runs on your machine. You provide DeepSeek and Groq API keys (pay-as-yo
 
 ## What you get
 
-For example, if you describe "A leave-management app where employees submit time-off requests and managers approve them", Pragma generates:
+Every generated project includes:
 
 - Complete source files for your application
 - Database models and migrations (PostgreSQL or SQLite)
