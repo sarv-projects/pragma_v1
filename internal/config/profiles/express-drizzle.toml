@@ -1,0 +1,96 @@
+[meta]
+name = "Express + Drizzle"
+language = "typescript"
+version = "5.x"
+description = "TypeScript REST API with Express 5 and Drizzle ORM"
+beginner_label = "Node.js + PostgreSQL"
+
+[framework]
+name = "express"
+version = "5"
+
+[database]
+orm = "drizzle"
+orm_version = "0.36"
+driver = "postgres-js"
+migrations = "drizzle-kit"
+
+[frontend]
+enabled = true
+framework = "react"
+bundler = "vite"
+language = "typescript"
+description = "Vite + React + TypeScript SPA (generated in frontend/)"
+
+[testing]
+framework = "vitest"
+plugins = ["supertest"]
+coverage = "v8"
+
+[deployment]
+dockerfile = true
+compose = true
+base_image = "node:20-slim"
+
+[patterns]
+context = """
+FRAMEWORK PATTERNS:
+- OpenAPI: install swagger-jsdoc + swagger-ui-express, serve at /api-docs
+- Create a src/swagger.ts config with openapi: "3.0.0", servers, and apis glob
+- Annotate each route handler with @openapi JSDoc comments (path, method, summary, tags, requestBody, responses)
+- Export the raw spec as openapi.json from the server startup
+- Same patterns as express-prisma profile for Express layer
+- Drizzle schema: define tables in src/db/schema.ts using drizzle-orm/pg-core
+- Drizzle queries: use db.select().from(table).where(eq(field, value))
+- Relations: define with relations() helper, query with db.query.table.findMany({with:{}})
+- Migrations: drizzle-kit generate → drizzle-kit migrate
+- Type inference: use typeof table.$inferSelect and $inferInsert for types
+- Connection: postgres() from postgres-js, wrap with drizzle()
+- No raw SQL unless using sql`` tagged template (auto-parameterised)
+"""
+
+[engineering]
+context = """
+TYPESCRIPT BEST PRACTICES:
+- Strict mode: tsconfig strict = true (no implicit any, strict null checks)
+- No `any` type — use `unknown` and narrow, or define proper interfaces
+- Interface over type for object shapes (type for unions/intersections)
+- Prefer const assertions and enums for fixed sets
+- Use branded types for IDs (UserId, TaskId) to prevent mix-ups
+- Async/await everywhere (no raw .then() chains)
+- Error types: use discriminated unions or custom Error subclasses
+- No default exports (use named exports for better refactoring)
+- Module resolution: use path aliases (@/services, @/lib) via tsconfig paths
+- Immutability: use Readonly<T> for function params that shouldn't mutate
+- No console.log in production code (use structured logger: pino or winston)
+- Max file length: ~200 lines (split if larger)
+- Use ESM (import/export), not CommonJS (require)
+"""
+
+[security]
+context = """
+SECURITY PRACTICES:
+- Helmet middleware: sets security headers (CSP, HSTS, X-Frame-Options)
+- CORS: explicit origin array, never "*" in production. For OAuth callbacks, add specific provider domains (e.g., https://accounts.google.com)
+- Rate limiting: express-rate-limit on auth routes (5 req/min)
+- Input validation: zod on every route (reject early, log violation)
+- SQL injection: Drizzle uses parameterised queries via sql`` tagged template (never string concat)
+- Auth: JWT in Authorization header, bcrypt for passwords (rounds: 12)
+- OAuth: Use @auth0/auth0-sdk-express or passport.js with passport-google, passport-github for social login. Store client secrets in env vars. Use state parameter for CSRF protection. Redirect to secure callback URLs (https only in production).
+- Session auth: For cookie-based auth, use express-session with connect-pg-simple for PostgreSQL or connect-sqlite3 for SQLite. Set secure: true, httpOnly: true, sameSite: 'lax' in production.
+- Secrets: in .env, validated at startup, never in code
+- CSRF: not needed for pure API (stateless JWT), needed if using cookies or OAuth
+- Dependencies: npm audit, lockfile committed, no postinstall scripts from untrusted
+- Error responses: never expose stack traces or internal paths to client
+- File uploads: validate MIME type, limit size, store outside webroot
+"""
+
+[linter]
+tool = "eslint"
+config = "strict TypeScript, no-explicit-any"
+
+[conformance_rules]
+ban_any_type = true
+require_named_exports = true
+require_strict_tsconfig = true
+ban_console_log = true

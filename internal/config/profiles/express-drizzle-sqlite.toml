@@ -1,0 +1,96 @@
+[meta]
+name = "Express + Drizzle + SQLite"
+language = "typescript"
+version = "5.x"
+description = "TypeScript REST API with Express 5, Drizzle ORM, and SQLite"
+beginner_label = "Node.js + SQLite (no database setup needed)"
+
+[framework]
+name = "express"
+version = "5"
+
+[database]
+orm = "drizzle"
+orm_version = "0.36"
+driver = "better-sqlite3"
+migrations = "drizzle-kit"
+
+[frontend]
+enabled = false
+framework = "none"
+bundler = "none"
+language = "none"
+description = "Backend only"
+
+[testing]
+framework = "vitest"
+plugins = ["supertest"]
+coverage = "v8"
+
+[deployment]
+dockerfile = true
+compose = true
+base_image = "node:20-slim"
+
+[patterns]
+context = """
+FRAMEWORK PATTERNS:
+- Same patterns as express-drizzle profile for Express layer
+- Drizzle schema: define tables in src/db/schema.ts using drizzle-orm/sqlite-core
+- Drizzle queries: use db.select().from(table).where(eq(field, value))
+- Database connection: new Database('./app.db') from better-sqlite3, wrap with drizzle()
+- Relations: define with relations() helper, query with db.query.table.findMany({with:{}})
+- Migrations: drizzle-kit generate:sqlite → drizzle-kit migrate:sqlite
+- Type inference: use typeof table.$inferSelect and $inferInsert for types
+- SQLite file: stored in ./data/app.db, ensure directory exists on startup
+- Connection: singleton database instance in src/db/index.ts
+"""
+
+[engineering]
+context = """
+TYPESCRIPT BEST PRACTICES:
+- Strict mode: tsconfig strict = true (no implicit any, strict null checks)
+- No `any` type — use `unknown` and narrow, or define proper interfaces
+- Interface over type for object shapes (type for unions/intersections)
+- Prefer const assertions and enums for fixed sets
+- Use branded types for IDs (UserId, TaskId) to prevent mix-ups
+- Async/await everywhere (no raw .then() chains)
+- Error types: use discriminated unions or custom Error subclasses
+- No default exports (use named exports for better refactoring)
+- Module resolution: use path aliases (@/services, @/lib) via tsconfig paths
+- Immutability: use Readonly<T> for function params that shouldn't mutate
+- No console.log in production code (use structured logger: pino or winston)
+- Max file length: ~200 lines (split if larger)
+- Use ESM (import/export), not CommonJS (require)
+- SQLite initialization: check and create data directory on app start
+"""
+
+[security]
+context = """
+SECURITY PRACTICES:
+- Helmet middleware: sets security headers (CSP, HSTS, X-Frame-Options)
+- CORS: explicit origin array, never "*" in production. For OAuth callbacks, add specific provider domains (e.g., https://accounts.google.com)
+- Rate limiting: express-rate-limit on auth routes (5 req/min)
+- Input validation: zod on every route (reject early, log violation)
+- SQL injection: Drizzle uses parameterised queries via sql`` tagged template (never string concat)
+- Auth: JWT in Authorization header, bcrypt for passwords (rounds: 12)
+- OAuth: Use @auth0/auth0-sdk-express or passport.js with passport-google, passport-github for social login. Store client secrets in env vars. Use state parameter for CSRF protection. Redirect to secure callback URLs (https only in production).
+- Session auth: For cookie-based auth, use express-session with connect-sqlite3 for SQLite. Set secure: true, httpOnly: true, sameSite: 'lax' in production.
+- Secrets: in .env, validated at startup, never in code
+- CSRF: not needed for pure API (stateless JWT), needed if using cookies or OAuth
+- Dependencies: npm audit, lockfile committed, no postinstall scripts from untrusted
+- Error responses: never expose stack traces or internal paths to client
+- File uploads: validate MIME type, limit size, store outside webroot
+- SQLite: database file permissions set to 600, directory not web-accessible. Ensure data directory exists.
+- Database backups: include instructions for SQLite file backups
+"""
+
+[linter]
+tool = "eslint"
+config = "strict TypeScript, no-explicit-any"
+
+[conformance_rules]
+ban_any_type = true
+require_named_exports = true
+require_strict_tsconfig = true
+ban_console_log = true

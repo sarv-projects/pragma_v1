@@ -1,0 +1,33 @@
+# Build artifacts (root-level binaries only)
+/pragma
+/pragma-smoke
+
+# Python venv
+.venv
+.venv/
+
+# Run output
+/output/
+.pragma/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+
+# Python build artifacts
+*.egg-info/
+__pycache__/
+*.pyc
+
+.venv311/
+/pragma-doctor
+*.tmp
+
+# AI agent working directories
+.agents/
+.opencode/
+.omo/

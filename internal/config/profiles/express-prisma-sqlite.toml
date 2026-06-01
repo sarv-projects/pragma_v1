@@ -1,0 +1,101 @@
+[meta]
+name = "Express + Prisma + SQLite"
+language = "typescript"
+version = "5.x"
+description = "TypeScript REST API with Express 5, Prisma ORM, and SQLite"
+beginner_label = "Node.js + SQLite (Prisma, no setup needed)"
+
+[framework]
+name = "express"
+version = "5"
+
+[database]
+orm = "prisma"
+orm_version = "6.x"
+migrations = "prisma migrate"
+driver = "sqlite"
+
+[frontend]
+enabled = false
+framework = "none"
+bundler = "none"
+language = "none"
+description = "Backend only"
+
+[testing]
+framework = "vitest"
+plugins = ["supertest"]
+coverage = "v8"
+
+[deployment]
+dockerfile = true
+compose = true
+base_image = "node:20-slim"
+
+[patterns]
+context = """
+FRAMEWORK PATTERNS:
+- Use express.Router() per domain, mount in app.ts
+- Middleware chain: cors → helmet → rateLimit → auth → routes → errorHandler
+- Async route handlers: wrap in asyncHandler() or use express-async-errors
+- Request validation: use zod schemas with middleware (never trust req.body raw)
+- Error handling: custom AppError class + global error handler middleware
+- Response format: consistent { success, data, error, meta } envelope
+- Prisma client: singleton in lib/prisma.ts, imported everywhere
+- Prisma schema: define models with @@map, @@id, @@default for SQLite compatibility
+- Database URL: file:./data/app.db in schema.prisma
+- Controllers are thin: extract logic to services/
+- File structure: src/routes/, src/services/, src/middleware/, src/lib/, src/types/
+- Use barrel exports (index.ts) per directory
+- Environment: dotenv + zod schema validation on startup (fail fast on missing vars)
+- SQLite directory: ensure ./data exists before Prisma client initialization
+"""
+
+[engineering]
+context = """
+TYPESCRIPT BEST PRACTICES:
+- Strict mode: tsconfig strict = true (no implicit any, strict null checks)
+- No `any` type — use `unknown` and narrow, or define proper interfaces
+- Interface over type for object shapes (type for unions/intersections)
+- Prefer const assertions and enums for fixed sets
+- Use branded types for IDs (UserId, TaskId) to prevent mix-ups
+- Async/await everywhere (no raw .then() chains)
+- Error types: use discriminated unions or custom Error subclasses
+- No default exports (use named exports for better refactoring)
+- Module resolution: use path aliases (@/services, @/lib) via tsconfig paths
+- Immutability: use Readonly<T> for function params that shouldn't mutate
+- No console.log in production code (use structured logger: pino or winston)
+- Max file length: ~200 lines (split if larger)
+- Use ESM (import/export), not CommonJS (require)
+- Prisma SQLite: use file-based URL, configure connection pooling appropriately
+"""
+
+[security]
+context = """
+SECURITY PRACTICES:
+- Helmet middleware: sets security headers (CSP, HSTS, X-Frame-Options)
+- CORS: explicit origin array, never "*" in production. For OAuth callbacks, add specific provider domains (e.g., https://accounts.google.com)
+- Rate limiting: express-rate-limit on auth routes (5 req/min)
+- Input validation: zod on every route (reject early, log violation)
+- SQL injection: Prisma parameterises all queries (no raw SQL unless escaped)
+- Auth: JWT in Authorization header, bcrypt for passwords (rounds: 12)
+- OAuth: Use @auth0/auth0-sdk-express or passport.js with passport-google, passport-github for social login. Store client secrets in env vars. Use state parameter for CSRF protection. Redirect to secure callback URLs (https only in production). For Prisma, configure OAuth providers in auth middleware.
+- Session auth: For cookie-based auth, use express-session with @prisma/adapter-prisma-session-store for SQLite. Set secure: true, httpOnly: true, sameSite: 'lax' in production.
+- Secrets: in .env, validated at startup, never in code
+- CSRF: not needed for pure API (stateless JWT), needed if using cookies or OAuth
+- Dependencies: npm audit, lockfile committed, no postinstall scripts from untrusted
+- Error responses: never expose stack traces or internal paths to client
+- File uploads: validate MIME type, limit size, store outside webroot
+- SQLite: database file permissions set to 600, directory not web-accessible. Ensure data directory exists.
+- Prisma SQLite: configure proper connection limits for SQLite. Use file:./data/app.db as database URL.
+- Database backups: include instructions for SQLite file backups
+"""
+
+[linter]
+tool = "eslint"
+config = "strict TypeScript config with no-explicit-any, no-unused-vars"
+
+[conformance_rules]
+ban_any_type = true
+require_named_exports = true
+require_strict_tsconfig = true

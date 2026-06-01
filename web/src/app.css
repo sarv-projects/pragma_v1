@@ -1,0 +1,95 @@
+@import 'tailwindcss';
+
+/* ─── Pragma Theme (dark-first, indigo/teal) ─── */
+:root {
+  --bg-base: #0a0a0f;
+  --bg-raised: #141420;
+  --bg-hover: #1c1c2e;
+  --border: #2a2a3a;
+  --border-focus: #8b7cf6;
+  --text-primary: #e5e7eb;
+  --text-muted: #9ca3af;
+  --text-dim: #6b7280;
+  --brand: #8b7cf6;
+  --brand-light: #a78bfa;
+  --accent: #2dd4bf;
+  --success: #34d399;
+  --warning: #fbbf24;
+  --error: #f87171;
+  --radius: 10px;
+}
+
+/* ─── Base resets for fluid feel ─── */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  overflow: hidden; /* app manages its own scroll */
+  margin: 0;
+}
+
+/* ─── Global fluid animation defaults ─── */
+/* GPU-composited only: transform + opacity. Never animate width/height/top/left. */
+.transition-fluid {
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+/* For elements entering the viewport */
+.enter-from-below {
+  animation: slideUp 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(12px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* ─── Scrollbar (thin, subtle) ─── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* ─── Focus ring (accessible but beautiful) ─── */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* ─── Selection ─── */
+::selection {
+  background: rgba(139, 124, 246, 0.3);
+  color: white;
+}
+
+/* ─── Setup Guide slide transitions ─── */
+.guide-slide {
+  position: relative;
+  width: 100%;
+}
+.guide-dot {
+  transition: background 200ms, transform 200ms;
+}

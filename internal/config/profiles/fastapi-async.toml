@@ -1,0 +1,98 @@
+[meta]
+name = "FastAPI Async"
+language = "python"
+version = "3.12"
+description = "Async Python backend with FastAPI and SQLAlchemy"
+beginner_label = "Python + PostgreSQL"
+
+[framework]
+name = "fastapi"
+version = "0.115"
+
+[database]
+orm = "sqlalchemy"
+orm_version = "2.0"
+async = true
+migrations = "alembic"
+
+[frontend]
+enabled = true
+framework = "react"
+bundler = "vite"
+language = "typescript"
+description = "Vite + React + TypeScript SPA (generated in frontend/)"
+
+[testing]
+framework = "pytest"
+plugins = ["pytest-asyncio", "httpx"]
+coverage = "pytest-cov"
+
+[deployment]
+dockerfile = true
+compose = true
+base_image = "python:3.12-slim"
+
+[patterns]
+context = """
+FRAMEWORK PATTERNS:
+- Use async def for ALL route handlers (never sync def in routes)
+- Use Depends() for dependency injection (DB sessions, auth, config)
+- Use async_sessionmaker with async contextmanager for DB sessions
+- Pydantic v2: use model_config = ConfigDict(...), NOT class Config
+- Alembic: use async migrations with run_async()
+- Always use lifespan context manager, NOT on_event("startup") decorators
+- SQLAlchemy: use Mapped[] type annotations, NOT Column()
+- Error handling: raise HTTPException with detail dict, use exception handlers for custom errors
+- Background tasks: use FastAPI BackgroundTasks, not raw asyncio.create_task
+- File structure: app/core/, app/models/, app/schemas/, app/routes/, app/services/
+- Schemas: separate request/response Pydantic models (never expose ORM models directly)
+- Use APIRouter per domain, mount in app/main.py
+"""
+
+[engineering]
+context = """
+PYTHON BEST PRACTICES:
+- Type hints on every function signature (args + return)
+- Docstrings on all public functions (Google style)
+- No circular imports (use TYPE_CHECKING for type-only imports)
+- Single responsibility: one concern per module
+- Repository pattern: data access behind repository classes, never raw queries in routes
+- Service layer: business logic in services/, routes only handle HTTP
+- Config: pydantic-settings BaseSettings, loaded from environment
+- Logging: use structlog or standard logging with proper levels (not print())
+- Constants: defined in core/constants.py, never magic strings in code
+- No wildcard imports (from x import *)
+- Max function length: ~30 lines (extract helpers if longer)
+- Use dataclasses or Pydantic for all data structures (no raw dicts for business objects)
+- Use pathlib for file paths, not os.path
+- Use f-strings for formatting, not .format() or %
+"""
+
+[security]
+context = """
+SECURITY PRACTICES:
+- Passwords: bcrypt via passlib, cost factor 12, NEVER stored plain
+- Auth: JWT with short-lived access tokens (15 min) + long-lived refresh tokens (7 days)
+- OAuth: For social auth, use authlib.integrations.starlette_client (Google, GitHub, Facebook). Store provider secrets in env vars. Use state parameter for CSRF protection. Implement OAuth2 flow with PKCE for web apps.
+- Session auth: For cookie-based auth, use python-jose for JWT or itsdangerous for signed sessions. Set Secure, HttpOnly, SameSite flags on cookies.
+- Secrets: loaded from env vars via pydantic-settings, NEVER hardcoded
+- Input validation: Pydantic models on EVERY endpoint (no raw request.json())
+- SQL injection: prevented by ORM parameterised queries (no raw f-string SQL)
+- CORS: explicit origin allowlist, never allow "*" in production
+- Rate limiting: slowapi on auth/login endpoints (5 attempts/min)
+- HTTPS: enforce via middleware or reverse proxy header check
+- Password rules: minimum 8 chars in validation schema
+- Token storage: access token in memory, refresh token in httpOnly cookie
+- Error messages: never expose internal errors to client (use generic messages)
+- Dependencies: pin exact versions in requirements, run safety/pip-audit
+"""
+
+[linter]
+tool = "ruff"
+config = "line-length = 120, target-version = 'py312'"
+
+[conformance_rules]
+require_async_handlers = true
+ban_class_config = true
+require_type_hints = true
+ban_wildcard_imports = true

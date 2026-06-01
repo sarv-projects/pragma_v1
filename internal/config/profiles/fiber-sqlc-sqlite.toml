@@ -1,0 +1,97 @@
+[meta]
+name = "Go Fiber + sqlc + SQLite"
+language = "go"
+version = "1.22"
+description = "Go REST API with Fiber v3, sqlc for type-safe SQL, and SQLite"
+beginner_label = "Go + SQLite (no database setup needed)"
+
+[framework]
+name = "fiber"
+version = "3"
+
+[database]
+query_gen = "sqlc"
+driver = "sqlite"
+migrations = "golang-migrate"
+
+[testing]
+framework = "testing"
+tools = ["testify", "httptest"]
+coverage = "go test -cover"
+
+[deployment]
+dockerfile = true
+compose = true
+base_image = "golang:1.22-alpine"
+final_image = "alpine:3.19"
+
+[patterns]
+context = """
+FRAMEWORK PATTERNS:
+- Fiber handlers: func(c fiber.Ctx) error — always return error, never panic
+- Route groups: app.Group("/api/v1") with middleware chaining
+- Middleware order: recover → logger → cors → rateLimit → auth → routes
+- Request parsing: c.BodyParser(&struct) with validation tags
+- Response: c.JSON(fiber.Map{}) or c.Status(201).JSON(response)
+- Error handling: custom error handler in app config, fiber.NewError() for HTTP errors
+- sqlc: write SQL in query/ directory, generate Go code with sqlc generate
+- For SQLite: use sqlite3 driver, define queries in .sql files
+- Connection: *sql.DB as singleton, passed via dependency injection
+- File structure: cmd/api/, internal/handler/, internal/service/, internal/repository/, db/query/, db/migrations/
+- SQLite database: file-based, stored in ./data/app.db
+- Config: use envconfig or viper, loaded at startup, passed as struct
+- sqlc config: specify sqlite as driver in sqlc.yaml
+- Graceful shutdown: signal.NotifyContext + app.ShutdownWithContext
+"""
+
+[engineering]
+context = """
+GO BEST PRACTICES:
+- Exported functions have doc comments (golint enforced)
+- Accept interfaces, return structs
+- Error handling: always check errors, wrap with fmt.Errorf("context: %w", err)
+- No naked returns (always explicit return values)
+- Use context.Context as first param for any function that does I/O
+- Dependency injection: pass dependencies as struct fields, not globals
+- Package layout: cmd/ for entrypoints, internal/ for private packages
+- No init() functions (explicit initialization in main)
+- Table-driven tests: []struct{name, input, want} pattern
+- Use testify/assert for test assertions (not manual if/t.Fatal)
+- Errors are values: define sentinel errors (var ErrNotFound = errors.New(...))
+- No magic numbers: define constants with descriptive names
+- Max function length: ~40 lines (extract helpers)
+- Use struct embedding for interface composition, not inheritance
+- Channels: prefer sync.Mutex for simple state, channels for communication
+- Use golangci-lint with strict config
+- SQLite: use github.com/mattn/go-sqlite3 driver
+"""
+
+[security]
+context = """
+SECURITY PRACTICES:
+- Auth: JWT with RS256 or HS256, validate on every protected route
+- Passwords: bcrypt (golang.org/x/crypto/bcrypt), cost 12
+- Input validation: validate struct tags, reject early
+- SQL injection: sqlc generates parameterised queries (never string concat SQL)
+- CORS: explicit AllowOrigins list in fiber middleware. For OAuth callbacks, add provider domains (e.g., https://accounts.google.com)
+- Rate limiting: fiber/middleware/limiter on auth endpoints
+- Secrets: from environment, never in code or config files committed to git
+- TLS: terminated at load balancer, or use fiber.ListenTLS in prod (recommended for OAuth callbacks)
+- Timeouts: set ReadTimeout, WriteTimeout, IdleTimeout on fiber.Config
+- No sensitive data in logs: redact tokens, passwords, PII
+- Dockerfile: multi-stage build, final image has no Go toolchain, run as non-root
+- SQLite: database file permissions set to 600, directory not web-accessible. Ensure data directory exists.
+- OAuth: Use github.com/go-oauth2/oauth2 for OAuth2 flows. For Google: golang.org/x/oauth2/google. For GitHub: golang.org/x/oauth2/github. Store client secrets in env vars. Use state parameter for CSRF protection. Implement PKCE for web apps. Redirect to https callback URLs in production. For SQLite projects, ensure HTTPS is configured for OAuth callbacks.
+- Session auth: For cookie-based auth, use github.com/gorilla/sessions with secure, httpOnly flags. Use fiber/middleware/session for fiber-native session management.
+- Database backups: include instructions for SQLite file backups
+"""
+
+[linter]
+tool = "golangci-lint"
+config = "errcheck, gosec, govet, staticcheck, unused"
+
+[conformance_rules]
+require_error_handling = true
+require_context_param = true
+require_doc_comments = true
+ban_naked_returns = true

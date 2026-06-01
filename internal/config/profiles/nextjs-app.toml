@@ -1,0 +1,89 @@
+[meta]
+name = "Next.js App Router"
+language = "typescript"
+version = "5.x"
+description = "Full-stack Next.js 15 with App Router, server components, and API routes"
+beginner_label = "React + Next.js (full-stack, includes frontend)"
+
+[framework]
+name = "nextjs"
+version = "15"
+router = "app"
+
+[database]
+orm = "prisma"
+orm_version = "6.x"
+migrations = "prisma migrate"
+
+[testing]
+framework = "vitest"
+plugins = ["testing-library/react", "playwright"]
+coverage = "v8"
+
+[deployment]
+dockerfile = true
+compose = true
+base_image = "node:20-slim"
+platform = "docker or vercel"
+
+[patterns]
+context = """
+FRAMEWORK PATTERNS:
+- App Router: all routes in app/ directory (page.tsx, layout.tsx, loading.tsx, error.tsx)
+- Server Components by default: only add 'use client' when using hooks/browser APIs
+- 'use client' required for: useState, useEffect, useRef, onClick, onChange, any browser API
+- 'use server' for server actions (form submissions, mutations)
+- Data fetching: fetch() in server components (not useEffect), with proper caching
+- Route handlers: app/api/*/route.ts with GET/POST/PUT/DELETE exports
+- Layouts: shared UI in layout.tsx, don't refetch data that parent already has
+- Loading UI: loading.tsx for Suspense boundaries (not manual useState loading)
+- Error boundaries: error.tsx per route segment (must be 'use client')
+- Metadata: export metadata object or generateMetadata() for SEO
+- Images: use next/image with width/height (never raw <img>)
+- Links: use next/link (never raw <a> for internal navigation)
+- Fonts: use next/font/google (not external stylesheet links)
+- File structure: app/(auth)/, app/(dashboard)/, components/, lib/, types/
+"""
+
+[engineering]
+context = """
+TYPESCRIPT + REACT BEST PRACTICES:
+- Components: function components only (no class components)
+- Props: interface with explicit types (no inline object types)
+- State: minimal useState, prefer server state (react-query or server components)
+- Side effects: useEffect only when truly needed (not for data fetching)
+- Custom hooks: extract reusable logic into hooks/ directory
+- Avoid prop drilling: use React Context or server components for shared state
+- Forms: use server actions + useFormState (not client-side fetch in onSubmit)
+- Imports: absolute paths via @/ alias (never relative ../../..)
+- No barrel exports in Next.js (breaks tree-shaking with App Router)
+- Colocation: put component-specific files next to the component
+- TypeScript strict mode, no any, no ts-ignore
+- Use satisfies operator for type-safe config objects
+"""
+
+[security]
+context = """
+SECURITY PRACTICES:
+- Auth: NextAuth.js / Auth.js with JWT strategy. For OAuth, use built-in providers (Google, GitHub, Facebook, etc.). Configure in auth.config.ts. Store provider secrets in env vars. Use [[...nextauth]] catch-all route for auth pages.
+- Middleware: protect routes in middleware.ts (not per-page checks). Add OAuth callback routes to middleware allowlist.
+- Server actions: always validate input (user can bypass client validation)
+- OAuth: Configure providers in auth.ts. Use NextAuth.js built-in providers or custom providers. Store client secrets in environment variables prefixed with AUTH_. Use state parameter for CSRF protection. Implement PKCE for enhanced security. Redirect to secure callback URLs (https only in production).
+- Session auth: For cookie-based sessions, use NextAuth.js with jwt or database session strategy. Configure session token storage in auth config.
+- Environment: NEXT_PUBLIC_ prefix ONLY for values safe to expose to browser
+- Secrets: never import server-only modules in client components. Store sensitive values in server-only environment variables.
+- CSRF: built-in for server actions (automatic). For OAuth, NextAuth.js handles CSRF via state parameter.
+- XSS: React auto-escapes JSX (don't use dangerouslySetInnerHTML)
+- Headers: set security headers in next.config.js (CSP, HSTS)
+- API routes: validate auth token on every API route handler. For OAuth-protected routes, verify session in route handlers.
+"""
+
+[linter]
+tool = "eslint"
+config = "next/core-web-vitals + typescript strict"
+
+[conformance_rules]
+require_use_client_for_hooks = true
+require_use_server_for_actions = true
+ban_any_type = true
+require_metadata_export = true

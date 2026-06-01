@@ -1,0 +1,97 @@
+[meta]
+name = "Express + Prisma"
+language = "typescript"
+version = "5.x"
+description = "TypeScript REST API with Express 5 and Prisma ORM"
+beginner_label = "Node.js + PostgreSQL (Prisma)"
+
+[framework]
+name = "express"
+version = "5"
+
+[database]
+orm = "prisma"
+orm_version = "6.x"
+migrations = "prisma migrate"
+
+[frontend]
+enabled = true
+framework = "react"
+bundler = "vite"
+language = "typescript"
+description = "Vite + React + TypeScript SPA (generated in frontend/)"
+
+[testing]
+framework = "vitest"
+plugins = ["supertest"]
+coverage = "v8"
+
+[deployment]
+dockerfile = true
+compose = true
+base_image = "node:20-slim"
+
+[patterns]
+context = """
+FRAMEWORK PATTERNS:
+- OpenAPI: install swagger-jsdoc + swagger-ui-express, serve at /api-docs
+- Create a src/swagger.ts config with openapi: "3.0.0", servers, and apis glob
+- Annotate each route handler with @openapi JSDoc comments (path, method, summary, tags, requestBody, responses)
+- Export the raw spec as openapi.json from the server startup
+- Use express.Router() per domain, mount in app.ts
+- Middleware chain: cors → helmet → rateLimit → auth → routes → errorHandler
+- Async route handlers: wrap in asyncHandler() or use express-async-errors
+- Request validation: use zod schemas with middleware (never trust req.body raw)
+- Error handling: custom AppError class + global error handler middleware
+- Response format: consistent { success, data, error, meta } envelope
+- Prisma client: singleton in lib/prisma.ts, imported everywhere
+- Controllers are thin: extract logic to services/
+- File structure: src/routes/, src/services/, src/middleware/, src/lib/, src/types/
+- Use barrel exports (index.ts) per directory
+- Environment: dotenv + zod schema validation on startup (fail fast on missing vars)
+"""
+
+[engineering]
+context = """
+TYPESCRIPT BEST PRACTICES:
+- Strict mode: tsconfig strict = true (no implicit any, strict null checks)
+- No `any` type — use `unknown` and narrow, or define proper interfaces
+- Interface over type for object shapes (type for unions/intersections)
+- Prefer const assertions and enums for fixed sets
+- Use branded types for IDs (UserId, TaskId) to prevent mix-ups
+- Async/await everywhere (no raw .then() chains)
+- Error types: use discriminated unions or custom Error subclasses
+- No default exports (use named exports for better refactoring)
+- Module resolution: use path aliases (@/services, @/lib) via tsconfig paths
+- Immutability: use Readonly<T> for function params that shouldn't mutate
+- No console.log in production code (use structured logger: pino or winston)
+- Max file length: ~200 lines (split if larger)
+- Use ESM (import/export), not CommonJS (require)
+"""
+
+[security]
+context = """
+SECURITY PRACTICES:
+- Helmet middleware: sets security headers (CSP, HSTS, X-Frame-Options)
+- CORS: explicit origin array, never "*" in production. For OAuth callbacks, add specific provider domains (e.g., https://accounts.google.com)
+- Rate limiting: express-rate-limit on auth routes (5 req/min)
+- Input validation: zod on every route (reject early, log violation)
+- SQL injection: Prisma parameterises all queries (no raw SQL unless escaped)
+- Auth: JWT in Authorization header, bcrypt for passwords (rounds: 12)
+- OAuth: Use @auth0/auth0-sdk-express or passport.js with passport-google, passport-github for social login. Store client secrets in env vars. Use state parameter for CSRF protection. Redirect to secure callback URLs (https only in production). For Prisma, use @prisma/client with OAuth2 providers via NextAuth.js-compatible patterns.
+- Session auth: For cookie-based auth, use express-session with @prisma/adapter-prisma-session-store. Set secure: true, httpOnly: true, sameSite: 'lax' in production.
+- Secrets: in .env, validated at startup, never in code
+- CSRF: not needed for pure API (stateless JWT), needed if using cookies or OAuth
+- Dependencies: npm audit, lockfile committed, no postinstall scripts from untrusted
+- Error responses: never expose stack traces or internal paths to client
+- File uploads: validate MIME type, limit size, store outside webroot
+"""
+
+[linter]
+tool = "eslint"
+config = "strict TypeScript config with no-explicit-any, no-unused-vars"
+
+[conformance_rules]
+ban_any_type = true
+require_named_exports = true
+require_strict_tsconfig = true

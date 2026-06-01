@@ -1,0 +1,164 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.suffix }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+            ext: ""
+          - os: ubuntu-24.04
+            goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+            ext: ""
+          - os: macos-14
+            goos: darwin
+            goarch: arm64
+            suffix: darwin-arm64
+            ext: ""
+          - os: macos-13
+            goos: darwin
+            goarch: amd64
+            suffix: darwin-amd64
+            ext: ""
+          - os: windows-2022
+            goos: windows
+            goarch: amd64
+            suffix: windows-amd64
+            ext: ".exe"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Derive version
+        id: version
+        shell: bash
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build web UI
+        shell: bash
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      - name: Build pragma binary
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+          out="dist/pragma-${{ matrix.suffix }}${{ matrix.ext }}"
+          go build -trimpath \
+            -ldflags="-s -w -X main.pragmaCurrentVersion=${{ steps.version.outputs.version }}" \
+            -o "$out" \
+            ./cmd/pragma
+          ls -la "$out"
+
+      - name: Archive binary
+        shell: bash
+        run: |
+          cd dist
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+            zip "pragma-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.zip" \
+              "pragma-${{ matrix.suffix }}${{ matrix.ext }}"
+          else
+            tar -czf "pragma-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.tar.gz" \
+              "pragma-${{ matrix.suffix }}${{ matrix.ext }}"
+          fi
+
+      - name: SHA256 checksum
+        shell: bash
+        run: |
+          cd dist
+          if [[ "${{ matrix.goos }}" == "windows" ]]; then
+            sha256sum "pragma-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.zip" \
+              > "pragma-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.zip.sha256"
+          else
+            sha256sum "pragma-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.tar.gz" \
+              > "pragma-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.tar.gz.sha256"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pragma-${{ matrix.suffix }}
+          path: |
+            dist/pragma-${{ steps.version.outputs.version }}-${{ matrix.suffix }}.*
+          if-no-files-found: error
+
+  publish-daemon:
+    name: Publish pragma_daemon to PyPI (best-effort)
+    runs-on: ubuntu-24.04
+    needs: [build]
+    # Only attempt PyPI upload when the project actually has it configured.
+    # Otherwise this job no-ops so releases don't get blocked.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build ./daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pragma-daemon-pypi
+          path: daemon/dist/*
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    needs: [build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: pragma-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -la artifacts/
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/pragma-*.tar.gz
+            artifacts/pragma-*.tar.gz.sha256
+            artifacts/pragma-*.zip
+            artifacts/pragma-*.zip.sha256
+          generate_release_notes: true
+          fail_on_unmatched_files: false

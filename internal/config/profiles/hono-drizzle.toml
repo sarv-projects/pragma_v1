@@ -1,0 +1,99 @@
+[meta]
+name = "Hono + Drizzle"
+language = "typescript"
+version = "5.x"
+description = "Lightweight TypeScript API with Hono (edge-ready) and Drizzle ORM"
+beginner_label = "Node.js + PostgreSQL (Hono, lightweight)"
+
+[framework]
+name = "hono"
+version = "4"
+
+[database]
+orm = "drizzle"
+orm_version = "0.36"
+driver = "postgres-js"
+migrations = "drizzle-kit"
+
+[frontend]
+enabled = true
+framework = "react"
+bundler = "vite"
+language = "typescript"
+description = "Vite + React + TypeScript SPA (generated in frontend/)"
+
+[testing]
+framework = "vitest"
+plugins = []
+coverage = "v8"
+
+[deployment]
+dockerfile = true
+compose = true
+platform = "docker or cloudflare-workers"
+
+[patterns]
+context = """
+FRAMEWORK PATTERNS:
+- OpenAPI: install @hono/swagger-ui, serve Swagger UI at /ui
+- Create a /doc route returning JSON OpenAPI spec (openapi: "3.1.0", info, paths)
+- Use OpenAPIHono from @hono/zod-openapi for type-safe OpenAPI integration
+- Hono app: new Hono() with route groups via app.route("/api", apiRoutes)
+- Middleware: app.use("*", cors(), logger()) — chain order matters
+- Handlers: c.json({data}), c.text("ok"), c.notFound()
+- Validation: use @hono/zod-validator middleware on routes
+- Error handling: app.onError((err, c) => c.json({error}, 500))
+- Context: c.env for environment bindings (Cloudflare), c.var for request-scoped data
+- File structure: src/routes/, src/middleware/, src/db/, src/types/
+- Type-safe routes: use Hono generics for env bindings
+- Streaming: use c.streamText() for SSE endpoints
+"""
+
+[engineering]
+context = """
+TYPESCRIPT BEST PRACTICES (Edge-Ready):
+- Strict mode: tsconfig strict = true (no implicit any, strict null checks)
+- No `any` type — use `unknown` and narrow, or define proper interfaces
+- Interface over type for object shapes (type for unions/intersections)
+- Prefer const assertions and enums for fixed sets
+- Async/await everywhere (no raw .then() chains)
+- Error types: use discriminated unions or custom Error subclasses
+- No default exports (use named exports for better refactoring)
+- No console.log in production code (use structured logger compatible with edge runtime)
+- Max file length: ~200 lines (split if larger)
+- Use ESM (import/export), not CommonJS (require)
+- Keep handlers lightweight (edge has CPU time limits)
+- No Node.js-specific APIs if targeting Cloudflare (no fs, no path)
+- Use Web Standard APIs (Request, Response, fetch) not Node APIs
+- Bundle size matters: avoid heavy dependencies, prefer lightweight alternatives
+- Use typeof table.$inferSelect and $inferInsert for Drizzle type inference
+"""
+
+[security]
+context = """
+SECURITY PRACTICES:
+- CORS: explicit origin allowlist via Hono cors() middleware, never "*" in production. For OAuth callbacks, add specific provider domains (e.g., https://accounts.google.com)
+- Rate limiting: custom middleware or third-party limiter on auth routes
+- Input validation: @hono/zod-validator on every route (reject early, log violation)
+- SQL injection: Drizzle uses parameterised queries via sql`` tagged template (never string concat)
+- Auth: JWT in Authorization header, bcrypt or argon2 for passwords
+- OAuth: Use hono/oauth or custom OAuth2 implementation. For Cloudflare Workers, use itty-oauth. For Node.js, use @auth0/auth0-sdk-express or passport.js adapters. Store client secrets in environment variables. Use state parameter for CSRF protection. Implement PKCE for web apps. Redirect to secure callback URLs (https only in production).
+- Session auth: For cookie-based auth, use hono/cookie or @hono/cookie. Set Secure, HttpOnly, SameSite attributes on cookies. For Cloudflare Workers, use KV for session storage.
+- Secrets: in environment bindings (wrangler.toml [vars] for Cloudflare, .env for Docker)
+- CSRF: not needed for pure API (stateless JWT), needed if using cookies or OAuth
+- Dependencies: npm audit, lockfile committed, no postinstall scripts from untrusted
+- Error responses: never expose stack traces or internal paths to client
+- Edge-specific: no file system access on Cloudflare (use KV/D1/R2 instead)
+- Headers: set security headers via Hono middleware (CSP, HSTS, X-Frame-Options)
+"""
+
+[linter]
+tool = "eslint"
+config = "strict TypeScript"
+
+[conformance_rules]
+ban_any_type = true
+require_named_exports = true
+require_strict_tsconfig = true
+ban_console_log = true
+require_error_handling = true
