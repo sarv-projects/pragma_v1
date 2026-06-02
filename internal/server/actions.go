@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/sarv-projects/pragma/internal/config"
 	"github.com/sarv-projects/pragma/internal/pipeline"
 )
 
@@ -85,12 +86,7 @@ func (s *Server) dispatchAction(raw []byte) {
 		s.handleUpdateManifest(raw)
 	case "pause_run":
 		// Pause is not yet implemented in the pipeline service
-		pauseMsg, _ := json.Marshal(map[string]any{
-			"type":    "log",
-			"level":   "info",
-			"message": "Pause is not yet supported. The pipeline will continue running.",
-		})
-		s.hub.broadcast <- pauseMsg
+		s.broadcastError("Pause is not yet supported. The pipeline will continue running.", false)
 	case "resume_run":
 		go s.resumeRun(msg.RunID)
 	case "extend_project":

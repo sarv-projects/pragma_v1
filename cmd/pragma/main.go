@@ -105,7 +105,8 @@ func runHeadless(cfg *config.Config, daemonEnv []string) {
 	oracle.ResetRun()
 
 	events := make(chan pipeline.Event, 100)
-	service := pipeline.NewService(client, oracle, cfg, events)
+	ledger := budget.NewLedger(config.LedgerPath())
+	service := pipeline.NewService(client, oracle, cfg, events, ledger)
 	service.Headless = true
 
 	manifestBytes, err := io.ReadAll(os.Stdin)
@@ -162,7 +163,8 @@ func runTUI(cfg *config.Config, daemonEnv []string) {
 	oracle.ResetRun()
 
 	events := make(chan pipeline.Event, 100)
-	service := pipeline.NewService(client, oracle, cfg, events)
+	ledger := budget.NewLedger(config.LedgerPath())
+	service := pipeline.NewService(client, oracle, cfg, events, ledger)
 
 	appModel := tui.NewAppModel(oracle, service, cfg)
 	p := tea.NewProgram(appModel, tea.WithAltScreen())
@@ -256,6 +258,7 @@ func runWeb(cfg *config.Config, daemonEnv []string) {
 	var client *daemon.Client
 	var oracle *budget.Oracle
 	var events chan pipeline.Event
+	var ledger *budget.Ledger
 
 	dLifecycle := daemon.New(cfg.Daemon.PythonExecutable, daemonEnv, daemonWriter)
 	if err := dLifecycle.Start(ctx); err != nil {
@@ -268,14 +271,18 @@ func runWeb(cfg *config.Config, daemonEnv []string) {
 			oracle = budget.New(cfg.Budget.LifetimeCap, cfg.Budget.PerRunCap, config.BudgetPath())
 			oracle.ResetRun()
 			events = make(chan pipeline.Event, 100)
-			service = pipeline.NewService(client, oracle, cfg, events)
+			ledger = budget.NewLedger(config.LedgerPath())
+			service = pipeline.NewService(client, oracle, cfg, events, ledger)
 		} else {
 			log.Printf("Failed to connect to daemon: %v", err)
 			dLifecycle.Stop()
 		}
 	}
 
-	srv := server.New(service, client, cfg, events, oracle, budget.NewLedger(config.LedgerPath()))
+	if ledger == nil {
+		ledger = budget.NewLedger(config.LedgerPath())
+	}
+	srv := server.New(service, client, cfg, events, oracle, ledger)
 
 	// If daemon didn't start, register the lazy starter so the server can
 	// boot the daemon after a key is saved via the Setup Guide.
@@ -325,7 +332,8 @@ func startDaemonAndAttach(ctx context.Context, srv *server.Server, cfg *config.C
 	oracle.ResetRun()
 
 	events := make(chan pipeline.Event, 100)
-	service := pipeline.NewService(client, oracle, cfg, events)
+	ledger := budget.NewLedger(config.LedgerPath())
+	service := pipeline.NewService(client, oracle, cfg, events, ledger)
 
 	srv.AttachDaemon(service, client, events, dLifecycle)
 	log.Printf("Daemon started and attached after key configuration")

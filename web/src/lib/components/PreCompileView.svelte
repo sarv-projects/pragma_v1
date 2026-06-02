@@ -25,7 +25,8 @@
 	$effect(() => {
 		const pid = $selectedProfile;
 		if (!pid) return;
-		fetch('/api/profiles')
+		const controller = new AbortController();
+		fetch('/api/profiles', { signal: controller.signal })
 			.then((r) => r.json())
 			.then((data: ProfileInfo[]) => {
 				const found = data.find((p) => p.id === pid);
@@ -36,9 +37,12 @@
 					profileInfo = { id: pid, name: pid, description: '', language: '' };
 				}
 			})
-			.catch(() => {
-				profileInfo = { id: pid, name: pid, description: '', language: '' };
+			.catch((err) => {
+				if (err.name !== 'AbortError') {
+					profileInfo = { id: pid, name: pid, description: '', language: '' };
+				}
 			});
+		return () => controller.abort();
 	});
 
 	function handleProceed() {

@@ -43,17 +43,19 @@ type Service struct {
 	config           *config.Config
 	events           chan<- Event
 	state            RunState
+	stateMu          sync.RWMutex
 	SpecApprovalChan chan struct{}
 	DAGApprovalChan  chan struct{}
-	Headless         bool
-
+	Headless           bool
+	lastPhaseCostMu    sync.Mutex
+	lastPhaseRecorded  float64
 }
 
-func NewService(c *daemon.Client, o *budget.Oracle, cfg *config.Config, evt chan<- Event) *Service {
+func NewService(c *daemon.Client, o *budget.Oracle, cfg *config.Config, evt chan<- Event, ledger *budget.Ledger) *Service {
 	return &Service{
 		client:           c,
 		oracle:           o,
-		ledger:           budget.NewLedger(config.LedgerPath()),
+		ledger:           ledger,
 		config:           cfg,
 		events:           evt,
 
@@ -95,6 +97,17 @@ func (s *Service) ApproveDAG() {
 
 
 func (s *Service) StartRun(ctx context.Context, manifest string, profileName string) error {
+	if s.Headless {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(manifest), &m); err != nil {
+			return fmt.Errorf("invalid manifest JSON: %w", err)
+		}
+		if desc, ok := m["description"].(string); !ok || desc == "" {
+			return fmt.Errorf("invalid manifest: 'description' is required")
+		}
+	}
+
+	s.stateMu.Lock()
 	s.state = RunState{
 		RunID:       fmt.Sprintf("run-%d", time.Now().Unix()),
 		Phase:       PhaseIdeation,
@@ -102,10 +115,11 @@ func (s *Service) StartRun(ctx context.Context, manifest string, profileName str
 		ProfileName: profileName,
 		Manifest:    json.RawMessage(manifest),
 	}
+	s.state.Phase = PhaseResearching
+	s.stateMu.Unlock()
 
 	// Phase 0: Interview complete — manifest was gathered by TUI
 	s.emit(PhaseChangedEvent{From: PhaseIdeation, To: PhaseResearching})
-	s.state.Phase = PhaseResearching
 	s.checkpoint()
 
 	prof, err := config.LoadProfile(profileName)
@@ -129,23 +143,28 @@ func (s *Service) StartRun(ctx context.Context, manifest string, profileName str
 		// Research is best-effort; continue with empty context.
 		researchRes = json.RawMessage(`{"findings":[]}`)
 	}
+	s.stateMu.Lock()
 	s.state.Research = researchRes
+	s.stateMu.Unlock()
 
 	// Record research phase cost
 	if s.ledger != nil {
-		s.ledger.RecordPhase("research", s.oracle.Status().RunSpent)
+		s.ledger.RecordPhase("research", s.phaseCost())
 	}
 
 	// 2. Compile Spec
 	s.emit(PhaseChangedEvent{From: PhaseResearching, To: PhaseCompilingSpec})
+	s.stateMu.Lock()
 	s.state.Phase = PhaseCompilingSpec
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	specArgs := map[string]any{
 		"manifest": s.state.Manifest,
 		"research": s.state.Research,
 		"profile":  prof,
+	}
+	s.stateMu.Unlock()
+	
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	sCtx, sCancel := context.WithTimeout(ctx, specTimeout)
 	specRes, err := s.client.Call(sCtx, "compile_spec", specArgs)
@@ -154,13 +173,14 @@ func (s *Service) StartRun(ctx context.Context, manifest string, profileName str
 		s.emit(ErrorEvent{Err: fmt.Errorf("spec compilation failed: %w", err), Fatal: true})
 		return fmt.Errorf("spec compilation failed: %w", err)
 	}
+	s.stateMu.Lock()
 	s.state.Spec = specRes
+	s.stateMu.Unlock()
 	s.checkpoint()
 
 	// Record spec compilation phase cost
 	if s.ledger != nil {
-		costAfterSpec := s.oracle.Status().RunSpent
-		s.ledger.RecordPhase("spec_compilation", costAfterSpec)
+		s.ledger.RecordPhase("spec_compilation", s.phaseCost())
 	}
 
 	// 3. Parse spec into file nodes + topological slices
@@ -171,7 +191,9 @@ func (s *Service) StartRun(ctx context.Context, manifest string, profileName str
 	// Overhead: research (~$0.002) + spec compilation (~$0.02) + readme (~$0.003) + security (~$0.002)
 	overhead := 0.027
 	estCost := overhead + float64(totalFilesToGenerate)*2000.0*(0.28/1_000_000.0)
+	s.stateMu.Lock()
 	s.state.DAG = specRes
+	s.stateMu.Unlock()
 	sliceFiles := make([][]string, len(slices))
 	for i, sl := range slices {
 		for _, f := range sl {
@@ -187,7 +209,9 @@ func (s *Service) StartRun(ctx context.Context, manifest string, profileName str
 
 	// HUMAN GATE 1: Spec review
 	s.emit(PhaseChangedEvent{From: PhaseCompilingSpec, To: PhaseSpecReview})
+	s.stateMu.Lock()
 	s.state.Phase = PhaseSpecReview
+	s.stateMu.Unlock()
 	if !s.Headless {
 		select {
 		case <-s.SpecApprovalChan:
@@ -198,7 +222,9 @@ func (s *Service) StartRun(ctx context.Context, manifest string, profileName str
 
 	// HUMAN GATE 2: DAG approval
 	s.emit(PhaseChangedEvent{From: PhaseSpecReview, To: PhaseDAGReview})
+	s.stateMu.Lock()
 	s.state.Phase = PhaseDAGReview
+	s.stateMu.Unlock()
 	if !s.Headless {
 		select {
 		case <-s.DAGApprovalChan:
@@ -209,17 +235,21 @@ func (s *Service) StartRun(ctx context.Context, manifest string, profileName str
 
 	// Phase 2: Generation
 	s.emit(PhaseChangedEvent{From: PhaseDAGReview, To: PhaseGenerating})
+	s.stateMu.Lock()
 	s.state.Phase = PhaseGenerating
+	runID := s.state.RunID
+	s.stateMu.Unlock()
 
-	runDir := filepath.Join(s.config.Output.Directory, s.state.RunID)
+	runDir := filepath.Join(s.config.Output.Directory, runID)
 
-	// Initialize remaining-files tracking for resume (H5).
+	s.stateMu.Lock()
 	s.state.FilesRemaining = nil
 	for _, sl := range slices {
 		for _, f := range sl {
 			s.state.FilesRemaining = append(s.state.FilesRemaining, f.Path)
 		}
 	}
+	s.stateMu.Unlock()
 
 	healedCount, genErr := s.runGeneration(ctx, prof, slices, totalFilesToGenerate, specSummary, runDir, nil)
 	if genErr != nil {
@@ -251,11 +281,13 @@ func (s *Service) runGeneration(
 	concurrency := 20
 
 	for sliceIdx, slice := range slices {
+		s.stateMu.Lock()
 		s.state.SliceIndex = sliceIdx
+		s.stateMu.Unlock()
 		s.checkpoint()
 
 		var wg sync.WaitGroup
-		var mu sync.Mutex
+
 		sem := make(chan struct{}, concurrency)
 
 		for _, f := range slice {
@@ -271,9 +303,9 @@ func (s *Service) runGeneration(
 				// Budget pre-flight with a real per-file estimate (D2).
 				if !s.oracle.CanSpend(fNode.EstTokens) {
 					s.logEvent("warn", fmt.Sprintf("Budget would be exceeded; skipping %s", fNode.Path))
-					mu.Lock()
+					s.stateMu.Lock()
 					s.state.FilesFailed = append(s.state.FilesFailed, fNode.Path)
-					mu.Unlock()
+					s.stateMu.Unlock()
 					return
 				}
 
@@ -330,9 +362,9 @@ func (s *Service) runGeneration(
 
 				if lastErr != nil {
 					s.logEvent("error", fmt.Sprintf("generate_file failed for %s: %v", fNode.Path, lastErr))
-					mu.Lock()
+					s.stateMu.Lock()
 					s.state.FilesFailed = append(s.state.FilesFailed, fNode.Path)
-					mu.Unlock()
+					s.stateMu.Unlock()
 
 					// Spec amendment detection: if 2nd failure and error suggests spec issue
 					retryMu.Lock()
@@ -362,18 +394,18 @@ func (s *Service) runGeneration(
 
 				if err := s.writeFile(runDir, fNode.Path, genOut.Content); err != nil {
 					s.logEvent("error", fmt.Sprintf("Failed to write %s: %v", fNode.Path, err))
-					mu.Lock()
+					s.stateMu.Lock()
 					s.state.FilesFailed = append(s.state.FilesFailed, fNode.Path)
-					mu.Unlock()
+					s.stateMu.Unlock()
 					s.emit(FileCompletedEvent{Path: fNode.Path, Duration: time.Since(start), Failed: true})
 					return
 				}
 
-				mu.Lock()
+				s.stateMu.Lock()
 				s.state.FilesCompleted = append(s.state.FilesCompleted, fNode.Path)
 				s.state.FilesRemaining = removeString(s.state.FilesRemaining, fNode.Path)
 				s.state.CostSoFar = s.oracle.Status().RunSpent
-				mu.Unlock()
+				s.stateMu.Unlock()
 				if genOut.Healed {
 					healMu.Lock()
 					healedCount++
@@ -392,13 +424,19 @@ func (s *Service) runGeneration(
 		if abortThreshold < 3 {
 			abortThreshold = 3
 		}
-		if len(s.state.FilesFailed) > abortThreshold {
+		s.stateMu.Lock()
+		failedCount := len(s.state.FilesFailed)
+		s.stateMu.Unlock()
+
+		if failedCount > abortThreshold {
+			s.stateMu.Lock()
 			s.state.Phase = PhaseFailed
+			s.stateMu.Unlock()
 			s.checkpoint()
-			msg := fmt.Sprintf("Aborting: too many failed files (%d of %d)", len(s.state.FilesFailed), totalFiles)
+			msg := fmt.Sprintf("Aborting: too many failed files (%d of %d)", failedCount, totalFiles)
 			s.logEvent("fatal", msg)
 			s.emit(ErrorEvent{Err: fmt.Errorf("%s", msg), Fatal: true})
-			return healedCount, fmt.Errorf("too many failed files: %d", len(s.state.FilesFailed))
+			return healedCount, fmt.Errorf("too many failed files: %d", failedCount)
 		}
 	}
 
@@ -410,12 +448,14 @@ func (s *Service) runGeneration(
 func (s *Service) finishRun(ctx context.Context, runDir string, healedCount, totalFiles int) int {
 	coveragePct := 100
 	if err := ctx.Err(); err == nil {
+		s.stateMu.RLock()
 		covArgs := map[string]any{
 			"spec":            s.state.Spec,
 			"manifest":        s.state.Manifest,
 			"output_dir":      runDir,
 			"files_completed": s.state.FilesCompleted,
 		}
+		s.stateMu.RUnlock()
 		covCtx, covCancel := context.WithTimeout(ctx, coverageTimeout)
 		covRes, covErr := s.client.Call(covCtx, "check_coverage", covArgs)
 		covCancel()
@@ -440,7 +480,10 @@ func (s *Service) finishRun(ctx context.Context, runDir string, healedCount, tot
 
 	if err := ctx.Err(); err == nil {
 		readmeCtx, readmeCancel := context.WithTimeout(ctx, readmeTimeout)
-		readmeRes, rErr := s.client.Call(readmeCtx, "generate_readme", map[string]any{"spec": s.state.Spec})
+		s.stateMu.RLock()
+		readmeArgs := map[string]any{"spec": s.state.Spec}
+		s.stateMu.RUnlock()
+		readmeRes, rErr := s.client.Call(readmeCtx, "generate_readme", readmeArgs)
 		readmeCancel()
 		if rErr == nil {
 			var readmeOut struct {
@@ -463,10 +506,12 @@ func (s *Service) finishRun(ctx context.Context, runDir string, healedCount, tot
 	// Security audit RPC (non-fatal) — use a longer timeout since it makes an LLM call
 	const auditTimeout = 3 * time.Minute
 	if err := ctx.Err(); err == nil {
+		s.stateMu.RLock()
 		auditArgs := map[string]any{
 			"files_completed": s.state.FilesCompleted,
 			"output_dir":      runDir,
 		}
+		s.stateMu.RUnlock()
 		auditCtx, auditCancel := context.WithTimeout(ctx, auditTimeout)
 		auditRes, auditErr := s.client.Call(auditCtx, "security_audit", auditArgs)
 		auditCancel()
@@ -492,10 +537,12 @@ func (s *Service) finishRun(ctx context.Context, runDir string, healedCount, tot
 
 	// Static analysis RPC (non-fatal)
 	if err := ctx.Err(); err == nil {
+		s.stateMu.RLock()
 		saArgs := map[string]any{
 			"output_dir": runDir,
 			"spec":       s.state.Spec,
 		}
+		s.stateMu.RUnlock()
 		saCtx, saCancel := context.WithTimeout(ctx, coverageTimeout)
 		_, saErr := s.client.Call(saCtx, "static_analysis", saArgs)
 		saCancel()
@@ -510,7 +557,10 @@ func (s *Service) finishRun(ctx context.Context, runDir string, healedCount, tot
 			Test string `json:"test"`
 		} `json:"setup"`
 	}
-	if err := json.Unmarshal(s.state.Spec, &specSetup); err == nil && specSetup.Setup.Test != "" {
+	s.stateMu.RLock()
+	specData := s.state.Spec
+	s.stateMu.RUnlock()
+	if err := json.Unmarshal(specData, &specSetup); err == nil && specSetup.Setup.Test != "" {
 		testCmd := specSetup.Setup.Test
 		if isAllowedTestCommand(testCmd) {
 			cmd := exec.Command("sh", "-c", testCmd)
@@ -548,23 +598,30 @@ func (s *Service) finishRun(ctx context.Context, runDir string, healedCount, tot
 		s.logEvent("info", "git not found on PATH; skipping version history")
 	}
 
+	s.stateMu.Lock()
 	s.state.Phase = PhaseComplete
+	runID := s.state.RunID
+	projectName := s.state.ProjectName
+	completedCount := len(s.state.FilesCompleted)
+	failedCount := len(s.state.FilesFailed)
+	s.stateMu.Unlock()
+	
 	s.checkpoint()
 	s.oracle.RecordRunCompletion()
 
 	// Record project cost in the ledger
 	if s.ledger != nil {
-		s.ledger.RecordProject(s.state.RunID, s.state.ProjectName, s.oracle.Status().RunSpent)
+		s.ledger.RecordProject(runID, projectName, s.oracle.Status().RunSpent)
 	}
 
 	st := s.oracle.Status()
 	absRunDir, _ := filepath.Abs(runDir)
 	s.emit(RunCompleteEvent{
-		ProjectName: s.state.ProjectName,
+		ProjectName: projectName,
 		OutputPath:  absRunDir,
-		FileCount:   len(s.state.FilesCompleted),
+		FileCount:   completedCount,
 		Healed:      healedCount,
-		Failed:      len(s.state.FilesFailed),
+		Failed:      failedCount,
 		TotalCost:   st.RunSpent,
 		BudgetLeft:  st.LifetimeCap - st.TotalSpent,
 
@@ -577,7 +634,9 @@ func (s *Service) finishRun(ctx context.Context, runDir string, healedCount, tot
 // Resume continues a checkpointed run that has a compiled spec. It regenerates
 // only the files not already completed, then runs the coverage gate + README.
 func (s *Service) Resume(ctx context.Context, state RunState) error {
+	s.stateMu.Lock()
 	s.state = state
+	s.stateMu.Unlock()
 	if len(state.Spec) == 0 {
 		return fmt.Errorf("run %s has no compiled spec — cannot resume", state.RunID)
 	}
@@ -601,7 +660,9 @@ func (s *Service) Resume(ctx context.Context, state RunState) error {
 	}
 
 	s.emit(PhaseChangedEvent{From: PhasePaused, To: PhaseGenerating})
+	s.stateMu.Lock()
 	s.state.Phase = PhaseGenerating
+	s.stateMu.Unlock()
 	s.emit(SpecReadyEvent{Spec: state.Spec, FileCount: totalFiles})
 
 	healed, genErr := s.runGeneration(ctx, prof, slices, totalFiles, specSummary, runDir, skip)
@@ -643,6 +704,25 @@ func (s *Service) planSlices(specRes json.RawMessage) (slices [][]FileNode, tota
 		files = append(files, fn)
 		nodeMap[fn.Path] = fn
 	}
+	
+	// B6: Tests array never becomes FileNodes
+	for _, raw := range specData.Tests {
+		var meta struct {
+			Path string `json:"path"`
+		}
+		if err := json.Unmarshal(raw, &meta); err != nil || meta.Path == "" {
+			continue
+		}
+		fn := FileNode{
+			Path:      meta.Path,
+			DependsOn: nil, // tests can be generated independently or concurrently
+			Contract:  raw,
+			EstTokens: estimateTokens(0, len(raw)),
+		}
+		files = append(files, fn)
+		nodeMap[fn.Path] = fn
+	}
+	
 	totalFiles = len(files)
 	if totalFiles == 0 {
 		return nil, 0, testCount
@@ -718,12 +798,19 @@ func (s *Service) writeFile(runDir, relPath, content string) error {
 }
 
 func (s *Service) checkpoint() {
-	if err := SaveCheckpoint(s.state, s.config.Output.Directory); err != nil {
+	s.stateMu.RLock()
+	state := s.state
+	s.stateMu.RUnlock()
+	if err := SaveCheckpoint(state, s.config.Output.Directory); err != nil {
 		s.logEvent("error", fmt.Sprintf("Failed to save checkpoint: %v", err))
 	}
 }
 
-func (s *Service) State() RunState { return s.state }
+func (s *Service) State() RunState { 
+	s.stateMu.RLock()
+	defer s.stateMu.RUnlock()
+	return s.state 
+}
 
 // estimateTokens produces a per-file output token estimate from contract shape.
 func estimateTokens(publicAPICount, contractBytes int) int {
@@ -754,11 +841,30 @@ func deriveProjectName(manifest string) string {
 			d := m.Description
 			if len(d) > 40 {
 				d = d[:40]
+				if lastSpace := strings.LastIndex(d, " "); lastSpace > 0 {
+					d = d[:lastSpace]
+				}
 			}
-			return d
+			return sanitizeForDir(d)
 		}
 	}
 	return "Pragma Project"
+}
+
+func sanitizeForDir(s string) string {
+	var sb strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			sb.WriteRune(r)
+		} else if sb.Len() > 0 && sb.String()[sb.Len()-1] != '-' {
+			sb.WriteRune('-')
+		}
+	}
+	res := strings.TrimRight(sb.String(), "-")
+	if res == "" {
+		return "Pragma Project"
+	}
+	return res
 }
 
 func runeSafeTruncate(s string, max int) string {
@@ -776,6 +882,18 @@ func runeSafeTruncate(s string, max int) string {
 func utf8RuneStart(b byte) bool {
 	// Continuation bytes are 0b10xxxxxx.
 	return b&0xC0 != 0x80
+}
+
+func (s *Service) phaseCost() float64 {
+	s.lastPhaseCostMu.Lock()
+	defer s.lastPhaseCostMu.Unlock()
+	current := s.oracle.Status().RunSpent
+	delta := current - s.lastPhaseRecorded
+	s.lastPhaseRecorded = current
+	if delta < 0 {
+		delta = 0
+	}
+	return delta
 }
 
 func removeString(slice []string, target string) []string {

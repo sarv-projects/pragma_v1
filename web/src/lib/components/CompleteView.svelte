@@ -23,18 +23,24 @@
 	let dockerError = $state('');
 
 	$effect(() => {
+		const controller = new AbortController();
 		if ($runResult?.output_path) {
 			const runId = $runResult.output_path.split(/[/\\]/).pop();
 			if (runId) {
-				fetch(`/api/readme?run_id=${runId}`)
+				fetch(`/api/readme?run_id=${runId}`, { signal: controller.signal })
 					.then((res) => res.text())
 					.then((text) => {
 						const lines = text.split('\n');
 						readmeContent = lines.slice(0, 12).join('\n') + (lines.length > 12 ? '\n…' : '');
 					})
-					.catch(() => { readmeContent = ''; });
+					.catch((err) => { 
+						if (err.name !== 'AbortError') {
+							readmeContent = ''; 
+						}
+					});
 			}
 		}
+		return () => controller.abort();
 	});
 
 	function newProject() {

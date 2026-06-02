@@ -179,7 +179,7 @@ func (c *wsClient) readPump(actionHandler func([]byte)) {
 			windowStart = now
 		}
 		msgCount++
-		if msgCount > rateLimit {
+		if msgCount >= rateLimit {
 			log.Printf("server: rate limit exceeded for client, closing connection")
 			_ = c.conn.WriteMessage(websocket.CloseMessage,
 				websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "rate limit exceeded"))

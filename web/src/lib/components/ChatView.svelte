@@ -21,7 +21,9 @@
 	$effect(() => {
 		if ($messages.length && chatContainer) {
 			tick().then(() => {
-				chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
+				if (chatContainer) {
+					chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
+				}
 			});
 		}
 	});

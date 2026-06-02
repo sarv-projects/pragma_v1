@@ -130,16 +130,41 @@ export function connect() {
   };
 }
 
+let visibilityListenerAdded = false;
+
 function scheduleReconnect() {
   if (reconnectTimer) return;
   
-  // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
   const attempt = get(reconnectAttempts);
+  
+  // Hard cap at 5 attempts to save resources
+  if (attempt >= 5) {
+    reconnectFailed.set(true);
+    errorMsg.set("Connection lost. Please refresh the page or restart the server.");
+    return;
+  }
+
+  // Pause polling if the tab is hidden
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    if (!visibilityListenerAdded) {
+      document.addEventListener('visibilitychange', function onVisChange() {
+        if (document.visibilityState === 'visible') {
+          document.removeEventListener('visibilitychange', onVisChange);
+          visibilityListenerAdded = false;
+          connect();
+        }
+      });
+      visibilityListenerAdded = true;
+    }
+    return;
+  }
+
+  // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
   const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
   
   reconnectAttempts.update((n) => n + 1);
   
-  // Show warning after 3 attempts but keep retrying
+  // Show warning after 3 attempts but keep retrying up to 5
   if (attempt >= 3) {
     reconnectFailed.set(true);
   }
@@ -285,6 +310,21 @@ async function syncServerState() {
         })),
       );
       if (data.total_files > 0) totalFiles.set(data.total_files);
+    }
+    // Restore spec data and selected profile
+    if (data.spec) {
+      try {
+        const specObj = typeof data.spec === "string" ? JSON.parse(data.spec) : data.spec;
+        specData.set(specObj);
+        if (specObj.files) specFileCount.set(specObj.files.length);
+        if (specObj.tests) specTestCount.set(specObj.tests.length);
+      } catch { /* ignore */ }
+    }
+    if (data.selected_profile) selectedProfile.set(data.selected_profile);
+    if (data.manifest) {
+      try {
+        manifest.set(typeof data.manifest === "string" ? JSON.parse(data.manifest) : data.manifest);
+      } catch { /* ignore */ }
     }
   } catch {
     // non-fatal — server may not have /api/status yet

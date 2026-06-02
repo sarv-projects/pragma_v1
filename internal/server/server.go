@@ -42,6 +42,8 @@ type Server struct {
 	
 	// daemonStarting prevents concurrent daemon start attempts
 	daemonStarting bool
+
+	cancelEvents context.CancelFunc
 }
 
 // New creates a Server. The events channel is read by the hub to broadcast to
@@ -80,10 +82,15 @@ func (s *Server) AttachDaemon(svc *pipeline.Service, client *daemon.Client, even
 	s.client = client
 	s.events = events
 	s.daemonLifecycle = lifecycle
+	if s.cancelEvents != nil {
+		s.cancelEvents()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.cancelEvents = cancel
 	s.mu.Unlock()
 
 	// Start forwarding events from the new channel
-	go s.forwardEvents()
+	go s.forwardEvents(ctx)
 }
 
 // Shutdown stops the daemon process if it was started by the server.
@@ -174,12 +181,14 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 	go s.hub.run()
 
 	// Forward pipeline events to the hub (if events channel exists)
-	s.mu.RLock()
+	s.mu.Lock()
 	hasEvents := s.events != nil
-	s.mu.RUnlock()
 	if hasEvents {
-		go s.forwardEvents()
+		ctx, cancel := context.WithCancel(context.Background())
+		s.cancelEvents = cancel
+		go s.forwardEvents(ctx)
 	}
+	s.mu.Unlock()
 
 	srv := &http.Server{
 		Addr:    addr,
@@ -209,29 +218,37 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 
 // forwardEvents reads from the pipeline event channel and converts events into
 // JSON messages broadcast to all connected WebSocket clients.
-func (s *Server) forwardEvents() {
+func (s *Server) forwardEvents(ctx context.Context) {
 	s.mu.RLock()
 	events := s.events
 	s.mu.RUnlock()
 	if events == nil {
 		return
 	}
-	for ev := range events {
-		// Side-effect: record completed runs in the ledger
-		if rc, ok := ev.(pipeline.RunCompleteEvent); ok && s.ledger != nil {
-			s.ledger.RecordProject(rc.ProjectName, rc.ProjectName, rc.TotalCost)
-		}
-		msg := eventToJSON(ev)
-		if msg != nil {
-			s.hub.broadcast <- msg
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-events:
+			if !ok {
+				return
+			}
+			// Side-effect: record completed runs in the ledger
+			if rc, ok := ev.(pipeline.RunCompleteEvent); ok && s.ledger != nil {
+				s.ledger.RecordProject(rc.ProjectName, rc.ProjectName, rc.TotalCost)
+			}
+			msg := eventToJSON(ev)
+			if msg != nil {
+				s.hub.broadcast <- msg
+			}
 		}
 	}
 }
 
-// corsMiddleware rejects POST requests from non-localhost origins.
+// corsMiddleware rejects non-GET requests from non-localhost origins.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
+		if r.Method != http.MethodGet && r.Method != http.MethodOptions && r.Method != http.MethodHead {
 			origin := r.Header.Get("Origin")
 			if origin != "" && !isLocalhostOrigin(origin) {
 				http.Error(w, "Forbidden", http.StatusForbidden)

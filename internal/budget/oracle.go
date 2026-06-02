@@ -71,7 +71,11 @@ func (o *Oracle) CanSpend(estimatedOutputTokens int) bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
-	cost := float64(estimatedOutputTokens) * outputCostPerToken
+	// Rough heuristic: input context is often ~3x the output size.
+	inputCost := float64(estimatedOutputTokens) * 3.0 * inputCostPerToken
+	outputCost := float64(estimatedOutputTokens) * outputCostPerToken
+	cost := inputCost + outputCost
+	
 	return o.spent+cost <= o.lifetime && o.runSpent+cost <= o.perRunCap
 }
 

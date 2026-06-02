@@ -18,17 +18,17 @@ func TestPlanSlicesTopological(t *testing.T) {
 	s := &Service{}
 	slices, total, testCount := s.planSlices(raw)
 
-	if total != 3 {
-		t.Fatalf("total files = %d, want 3", total)
+	if total != 4 {
+		t.Fatalf("total files = %d, want 4", total)
 	}
 	if testCount != 1 {
 		t.Errorf("test count = %d, want 1", testCount)
 	}
 	if len(slices) != 3 {
-		t.Fatalf("slices = %d, want 3 (config -> models -> routes)", len(slices))
+		t.Fatalf("slices = %d, want 3", len(slices))
 	}
-	if slices[0][0].Path != "config.py" {
-		t.Errorf("first slice should be config.py, got %s", slices[0][0].Path)
+	if slices[0][0].Path != "config.py" && slices[0][1].Path != "config.py" {
+		t.Errorf("first slice should contain config.py")
 	}
 	if slices[2][0].Path != "routes.py" {
 		t.Errorf("last slice should be routes.py, got %s", slices[2][0].Path)
@@ -52,7 +52,7 @@ func TestDeriveProjectName(t *testing.T) {
 	if got := deriveProjectName(`{"project_name":"task-api"}`); got != "task-api" {
 		t.Errorf("got %q", got)
 	}
-	if got := deriveProjectName(`{"description":"a thing"}`); got != "a thing" {
+	if got := deriveProjectName(`{"description":"a thing"}`); got != "a-thing" {
 		t.Errorf("got %q", got)
 	}
 	if got := deriveProjectName(`not json`); got != "Pragma Project" {

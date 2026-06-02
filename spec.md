@@ -395,7 +395,7 @@ If git is not found, a warning is logged and generation continues.
 
 **Model discovery:** On startup, the daemon calls `/models` and caches results for 24 hours in `~/.pragma/models.json`. Models are ranked by keyword preference lists for reasoning vs codegen tasks.
 
-### Groq (optional, free)
+### Groq (required, free)
 
 | Field | Value |
 |-------|-------|
@@ -508,8 +508,7 @@ Returns a list of `Violation(line, rule, message)` objects.
 
 If violations are found:
 
-1. **Groq configured** → `groq.heal_code(messages)` using `openai/gpt-oss-20b` (1,000 t/s, free)
-2. **No Groq** → `heal_file(ds_client, content, contract, violations)` using DeepSeek Flash
+1. `groq.heal_code(messages)` using `openai/gpt-oss-20b` (1,000 t/s, free)
 
 The healer receives: original code, violation list, and file contract. It outputs only the fixed source code (no markdown, no explanation).
 

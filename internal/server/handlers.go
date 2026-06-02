@@ -34,6 +34,7 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "daemon not running; please configure an API key first")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req struct {
 		Content string `json:"content"`
 	}
@@ -81,6 +82,7 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "daemon not running; please configure an API key first")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req struct {
 		RunID string `json:"run_id"`
 	}
@@ -185,6 +187,7 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req struct {
 		Path string `json:"path"`
 	}
@@ -219,7 +222,8 @@ func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	// Ensure the requested path is within the output directory
-	if !strings.HasPrefix(absPath, absOutputDir) {
+	rel, err := filepath.Rel(absOutputDir, absPath)
+	if err != nil || strings.HasPrefix(rel, "..") || rel == ".." {
 		writeError(w, http.StatusForbidden, "path must be within output directory")
 		return
 	}
@@ -268,6 +272,7 @@ func (s *Server) handleReadme(w http.ResponseWriter, r *http.Request) {
 
 
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req struct {
 		Provider   string `json:"provider"`
 		APIKey     string `json:"api_key"`
@@ -488,6 +493,7 @@ func (s *Server) handleAnalyzeImage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "daemon not running; configure an API key first")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, 10<<20)
 
 	// Groq key is required — vision uses llama-4-scout, not DeepSeek
 	groqKey, err := s.kr.Get(keyvault.KeyGroq)
@@ -573,6 +579,7 @@ func providerToKeyName(provider string) string {
 
 // handleSelectProfile auto-picks a build profile from the user's project description.
 func (s *Server) handleSelectProfile(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req struct {
 		Text string `json:"text"`
 	}
@@ -717,6 +724,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // handleRunProject runs `docker compose up -d` in the project output directory.
 func (s *Server) handleRunProject(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req struct {
 		RunID string `json:"run_id"`
 	}
@@ -751,7 +759,7 @@ func (s *Server) handleRunProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "docker", "compose", "up", "-d", "--build")

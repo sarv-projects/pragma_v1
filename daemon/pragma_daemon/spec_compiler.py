@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from pragma_daemon.deepseek import DeepSeekClient
+from pragma_daemon.spec_validator import validate_spec as _validate
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,6 @@ async def _compile_single(
     # Pass 3 is conditional: only run if validation finds issues after Pass 2.
     try:
         pass2_spec = _parse_spec_json(pass2_output)
-        from pragma_daemon.spec_validator import validate_spec as _validate
         pass2_errors = _validate(pass2_spec, manifest)
         pass2_fatal = [e for e in pass2_errors if e.severity == "error"]
         if not pass2_fatal:
@@ -473,10 +473,19 @@ def _parse_spec_json(raw: str) -> dict:
     except json.JSONDecodeError:
         pass
 
-    # 3. Brace extraction — first '{' to matching last '}'.
+    # 3. Brace extraction — robust counting to ignore trailing garbage
     start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end > start:
-        return json.loads(text[start:end + 1])
+    if start >= 0:
+        count = 0
+        for i in range(start, len(text)):
+            if text[i] == '{':
+                count += 1
+            elif text[i] == '}':
+                count -= 1
+                if count == 0:
+                    try:
+                        return json.loads(text[start:i+1])
+                    except json.JSONDecodeError:
+                        break
 
     raise ValueError("no JSON object found in spec output")

@@ -63,15 +63,20 @@ class RPCServer:
                     await self._send(writer, {"error": {"code": -32700, "message": "Parse error"}})
         except asyncio.CancelledError:
             pass
+        except (ConnectionResetError, BrokenPipeError):
+            pass
         finally:
             # Cancel all active tasks before closing writer
-            for task in active_tasks:
+            for task in list(active_tasks):
                 task.cancel()
             # Wait for tasks to finish (with timeout)
             if active_tasks:
                 await asyncio.wait(active_tasks, timeout=5.0)
             writer.close()
-            await writer.wait_closed()
+            try:
+                await writer.wait_closed()
+            except (ConnectionResetError, BrokenPipeError):
+                pass
             logger.info("Client disconnected")
 
     async def _dispatch(self, writer: asyncio.StreamWriter, request: dict):
@@ -105,10 +110,13 @@ class RPCServer:
             except Exception as e:
                 logger.exception(f"Error handling {method}")
                 if req_id is not None:
-                    await self._send(writer, {
-                        "id": req_id,
-                        "error": {"code": -32000, "message": str(e)}
-                    })
+                    try:
+                        await self._send(writer, {
+                            "id": req_id,
+                            "error": {"code": -32000, "message": str(e)}
+                        })
+                    except (ConnectionResetError, BrokenPipeError):
+                        pass
 
     async def _send(self, writer: asyncio.StreamWriter, response: dict):
         data = json.dumps(response) + "\n"

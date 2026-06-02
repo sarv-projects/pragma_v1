@@ -149,7 +149,10 @@ class DeepSeekClient:
             "fallback_model": self._fallback_model,
         }
         cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(_json.dumps(cache_data, indent=2))
+        import os
+        cache_tmp = cache_path.with_suffix(".tmp")
+        cache_tmp.write_text(_json.dumps(cache_data, indent=2))
+        os.replace(cache_tmp, cache_path)
         logger.info(
             f"Model cache written: reasoning={self._reasoning_model}, codegen={self._codegen_model}"
         )

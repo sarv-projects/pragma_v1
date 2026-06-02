@@ -138,7 +138,7 @@
 			{/if}
 		</div>
 
-		<!-- Image upload (Groq Scout vision — optional) -->
+		<!-- Image upload (Groq Scout vision) -->
 		<div class="space-y-2">
 			<button
 				onclick={() => (showImageUpload = !showImageUpload)}

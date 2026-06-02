@@ -126,7 +126,7 @@ func TestAllScreensRender(t *testing.T) {
 func TestQQuitsOnlyFromHome(t *testing.T) {
 	cfg, _ := config.Load("/nonexistent")
 	oracle := budget.New(2.0, 0.25, t.TempDir()+"/b.json")
-	svc := pipeline.NewService(nil, oracle, cfg, make(chan pipeline.Event, 10))
+	svc := pipeline.NewService(nil, oracle, cfg, make(chan pipeline.Event, 10), nil)
 	app := NewAppModel(oracle, svc, cfg)
 	app.CurrentScreen = ScreenHome
 
@@ -151,7 +151,7 @@ func TestQQuitsOnlyFromHome(t *testing.T) {
 func TestHelpOverlayToggle(t *testing.T) {
 	cfg, _ := config.Load("/nonexistent")
 	oracle := budget.New(2.0, 0.25, t.TempDir()+"/b.json")
-	svc := pipeline.NewService(nil, oracle, cfg, make(chan pipeline.Event, 10))
+	svc := pipeline.NewService(nil, oracle, cfg, make(chan pipeline.Event, 10), nil)
 	app := NewAppModel(oracle, svc, cfg)
 	m, _ := app.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	am := m.(AppModel)

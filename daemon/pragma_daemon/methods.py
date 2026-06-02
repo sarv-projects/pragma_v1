@@ -58,7 +58,21 @@ class RPCMethods:
     ):
         self.ds = deepseek
         self.cache = cache
-        self.groq = groq  # optional — if present, used for interview + heal
+        self.groq = groq
+
+def _extract_json_braces(text: str, start_char='{', end_char='}') -> str:
+    start = text.find(start_char)
+    if start == -1:
+        return ""
+    count = 0
+    for i in range(start, len(text)):
+        if text[i] == start_char:
+            count += 1
+        elif text[i] == end_char:
+            count -= 1
+            if count == 0:
+                return text[start:i+1]
+    return ""  # optional — if present, used for interview + heal
 
     async def ping(self) -> str:
         return "pong"
@@ -72,11 +86,6 @@ class RPCMethods:
         Uses Groq (llama-3.3-70b-versatile) if a key is present — better
         conversational quality and free. Falls back to DeepSeek otherwise.
         """
-        cache_key = "interview_chat:" + json.dumps(messages, sort_keys=True)
-        cached = self.cache.get(cache_key)
-        if cached:
-            return cached
-
         logger.info(f"Interview chat: {len(messages)} messages")
         full_messages = [{"role": "system", "content": INTERVIEW_SYSTEM}] + messages
 
@@ -112,11 +121,10 @@ class RPCMethods:
             try:
                 manifest = json.loads(json_part)
             except json.JSONDecodeError:
-                start = json_part.find("{")
-                end = json_part.rfind("}") + 1
-                if start >= 0 and end > start:
+                extracted = _extract_json_braces(json_part)
+                if extracted:
                     try:
-                        manifest = json.loads(json_part[start:end])
+                        manifest = json.loads(extracted)
                     except json.JSONDecodeError:
                         manifest = {"description": json_part}
 
@@ -135,7 +143,6 @@ class RPCMethods:
             "manifest": manifest,
             "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
         }
-        self.cache.set(cache_key, result)
         return result
 
     async def do_research(self, manifest: dict, profile: dict) -> dict:
@@ -219,11 +226,13 @@ class RPCMethods:
     async def generate_file(
         self, file_contract: dict, profile: dict, deps: dict, spec_summary: str
     ) -> dict:
+        import hashlib
+        deps_hash = hashlib.sha256(json.dumps(deps, sort_keys=True).encode()).hexdigest()
         cache_key = "generate_file:" + json.dumps(
             {
                 "file": file_contract,
                 "profile": profile,
-                "deps": deps,
+                "deps_hash": deps_hash,
                 "spec_summary": spec_summary,
             },
             sort_keys=True,
@@ -476,10 +485,9 @@ Output ONLY the Markdown content.
             if text.startswith("["):
                 warnings = json.loads(text)
             else:
-                start = text.find("[")
-                end = text.rfind("]") + 1
-                if start >= 0 and end > start:
-                    warnings = json.loads(text[start:end])
+                extracted = _extract_json_braces(text, '[', ']')
+                if extracted:
+                    warnings = json.loads(extracted)
                 else:
                     warnings = [text] if text else []
         except Exception as e:
@@ -642,10 +650,9 @@ Output ONLY the Markdown content.
             if text.startswith("{"):
                 delta_spec = json.loads(text)
             else:
-                start = text.find("{")
-                end = text.rfind("}") + 1
-                if start >= 0 and end > start:
-                    delta_spec = json.loads(text[start:end])
+                extracted = _extract_json_braces(text)
+                if extracted:
+                    delta_spec = json.loads(extracted)
                 else:
                     delta_spec = {"files": [], "error": "Failed to parse delta spec"}
         except Exception as e:
@@ -829,6 +836,12 @@ def _collect_python_info(
         func_node = node.child_by_field_name("function")
         if func_node:
             all_calls.add(func_node.text.decode("utf-8"))
+        
+        text = node.text.decode("utf-8")
+        if "os.getenv" in text or "os.environ.get" in text:
+            match = re.search(r'[("\'](\w+)["\']', text)
+            if match:
+                env_vars_used.add(match.group(1))
 
     # Check for os.environ references
     if node.type == "subscript":
@@ -836,13 +849,6 @@ def _collect_python_info(
         if "os.environ" in text or "os.getenv" in text:
             # Extract the key
             match = re.search(r'[\[("\']([\w]+)["\'\])]', text)
-            if match:
-                env_vars_used.add(match.group(1))
-
-    if node.type == "call":
-        text = node.text.decode("utf-8")
-        if "os.getenv" in text or "os.environ.get" in text:
-            match = re.search(r'[("\'](\w+)["\']', text)
             if match:
                 env_vars_used.add(match.group(1))
 

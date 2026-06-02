@@ -85,8 +85,12 @@ func fileSet(name, value string) error {
 	if err != nil {
 		return err
 	}
-	// 0600: owner read/write only.
-	return os.WriteFile(p, data, 0600)
+	// 0600: owner read/write only. Atomic: write to temp then rename.
+	tmp := p + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p)
 }
 
 func fileDelete(name string) {
@@ -106,7 +110,9 @@ func fileDelete(name string) {
 	}
 	delete(m, name)
 	out, _ := json.MarshalIndent(m, "", "  ")
-	_ = os.WriteFile(p, out, 0600)
+	tmp := p + ".tmp"
+	_ = os.WriteFile(tmp, out, 0600)
+	_ = os.Rename(tmp, p)
 }
 
 // Available reports whether keys can be persisted at all — either via the OS

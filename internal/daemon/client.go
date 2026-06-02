@@ -148,11 +148,19 @@ func (c *Client) Close() error {
 func (c *Client) Reconnect(socketPath string) error {
 	_ = c.Close()
 
-	time.Sleep(500 * time.Millisecond) // Give daemon time to start
-
-	conn, err := net.Dial("unix", socketPath)
+	var conn net.Conn
+	var err error
+	delay := 100 * time.Millisecond
+	for i := 0; i < 5; i++ {
+		time.Sleep(delay)
+		conn, err = net.Dial("unix", socketPath)
+		if err == nil {
+			break
+		}
+		delay *= 2
+	}
 	if err != nil {
-		return fmt.Errorf("failed to reconnect: %w", err)
+		return fmt.Errorf("failed to reconnect after retries: %w", err)
 	}
 
 	c.mu.Lock()
