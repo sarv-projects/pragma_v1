@@ -866,7 +866,7 @@ Classic Bubble Tea terminal UI. Same pipeline, different interface. Useful in en
 
 ---
 
-## 19. Folder Structure
+## 20. Folder Structure
 
 ```
 pragma/
@@ -941,7 +941,7 @@ pragma/
 
 ---
 
-## 20. Known Limitations
+## 21. Known Limitations
 
 1. **No incremental editing.** Pragma generates fresh codebases. It cannot modify an existing project's files (only `extend_project` which generates a delta spec for new files).
 
