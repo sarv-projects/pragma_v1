@@ -145,6 +145,37 @@ def _extract_json_braces(text: str, start_char='{', end_char='}') -> str:
         }
         return result
 
+    async def refine_spec(self, manifest: dict, prompt: str) -> dict:
+        """Modify an existing manifest based on user feedback."""
+        logger.info(f"Refining spec with prompt: {prompt}")
+        sys_prompt = (
+            "You are a senior software architect modifying an existing project manifest.\n"
+            "You will be given the current JSON manifest and a user's instruction for changes.\n"
+            "Output ONLY the new JSON manifest. Maintain the exact same schema structure."
+        )
+        msg = f"Current manifest:\n{json.dumps(manifest, indent=2)}\n\nUser request: {prompt}"
+        
+        try:
+            if self.groq:
+                resp = await self.groq.chat(
+                    [{"role": "system", "content": sys_prompt}, {"role": "user", "content": msg}],
+                    purpose="healing", max_tokens=4096
+                )
+            else:
+                resp = await self.ds.chat(
+                    [{"role": "system", "content": sys_prompt}, {"role": "user", "content": msg}],
+                    thinking=False, max_tokens=4096
+                )
+            
+            text = resp.content.strip()
+            extracted = _extract_json_braces(text)
+            if extracted:
+                return json.loads(extracted)
+            return json.loads(text)
+        except Exception as e:
+            logger.warning(f"refine_spec failed: {e}")
+            raise ValueError(f"Failed to refine spec: {e}")
+
     async def do_research(self, manifest: dict, profile: dict) -> dict:
         cache_key = "do_research:" + json.dumps(
             {"manifest": manifest, "profile": profile}, sort_keys=True

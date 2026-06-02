@@ -64,5 +64,6 @@ jobs:
       - name: Run smoke test (starts daemon, pings over UDS)
         env:
           PRAGMA_PYTHON: ${{ github.workspace }}/.venv/bin/python
-          NVIDIA_API_KEY: smoke-dummy-key
+          GROQ_API_KEY: smoke-dummy-key
+          DEEPSEEK_API_KEY: smoke-dummy-key
         run: ./pragma-smoke

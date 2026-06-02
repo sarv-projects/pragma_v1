@@ -215,3 +215,20 @@ func (c *Client) readLoop() {
 	}
 	c.mu.Unlock()
 }
+
+// RefineSpec asks the daemon to modify the manifest based on user feedback.
+func (c *Client) RefineSpec(manifest map[string]any, prompt string) (map[string]any, error) {
+	req := map[string]any{
+		"manifest": manifest,
+		"prompt":   prompt,
+	}
+	result, err := c.Call(context.Background(), "refine_spec", req)
+	if err != nil {
+		return nil, err
+	}
+	var newManifest map[string]any
+	if err := json.Unmarshal(result, &newManifest); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal manifest: %w", err)
+	}
+	return newManifest, nil
+}

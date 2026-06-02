@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -89,6 +90,12 @@ func (s *Server) dispatchAction(raw []byte) {
 		s.broadcastError("Pause is not yet supported. The pipeline will continue running.", false)
 	case "resume_run":
 		go s.resumeRun(msg.RunID)
+	case "refine_spec":
+		go func() {
+			if err := s.service.RefineSpec(context.Background(), msg.Content); err != nil {
+				s.broadcastError(fmt.Sprintf("Failed to refine spec: %v", err), false)
+			}
+		}()
 	case "extend_project":
 		go s.handleExtendProject(msg.RunID, msg.Content)
 	default:

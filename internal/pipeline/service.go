@@ -980,3 +980,66 @@ func containsShellMetachars(cmd string) bool {
 	}
 	return false
 }
+
+// RefineSpec asks the AI to modify the manifest and recompiles the spec in-place.
+func (s *Service) RefineSpec(ctx context.Context, prompt string) error {
+	s.stateMu.Lock()
+	if s.state.Phase != PhaseSpecReview {
+		s.stateMu.Unlock()
+		return fmt.Errorf("can only refine spec during spec review phase")
+	}
+	
+	var manifest map[string]any
+	if err := json.Unmarshal(s.state.Manifest, &manifest); err != nil {
+		s.stateMu.Unlock()
+		return err
+	}
+	prof := s.state.ProfileName
+	research := s.state.Research
+	s.stateMu.Unlock()
+
+	s.logEvent("info", "Refining specification...")
+
+	newManifest, err := s.client.RefineSpec(manifest, prompt)
+	if err != nil {
+		return fmt.Errorf("failed to refine manifest: %w", err)
+	}
+
+	specArgs := map[string]any{
+		"manifest": newManifest,
+		"research": research,
+		"profile":  prof,
+	}
+	sCtx, sCancel := context.WithTimeout(ctx, specTimeout)
+	specRes, err := s.client.Call(sCtx, "compile_spec", specArgs)
+	sCancel()
+	if err != nil {
+		return fmt.Errorf("failed to compile new spec: %w", err)
+	}
+
+	manifestBytes, _ := json.Marshal(newManifest)
+
+	s.stateMu.Lock()
+	s.state.Manifest = manifestBytes
+	s.state.Spec = specRes
+	s.state.DAG = specRes
+	s.stateMu.Unlock()
+
+	slices, totalFilesToGenerate, testCount := s.planSlices(specRes)
+	s.emit(SpecReadyEvent{Spec: specRes, FileCount: totalFilesToGenerate, TestCount: testCount})
+
+	estSeconds := totalFilesToGenerate * 2
+	overhead := 0.027
+	estCost := overhead + float64(totalFilesToGenerate)*2000.0*(0.28/1_000_000.0)
+	sliceFiles := make([][]string, len(slices))
+	for i, sl := range slices {
+		for _, f := range sl {
+			sliceFiles[i] = append(sliceFiles[i], f.Path)
+		}
+	}
+	s.emit(DAGReadyEvent{DAG: specRes, SliceCount: len(slices), EstSeconds: estSeconds, EstCost: estCost, Slices: sliceFiles})
+	s.checkpoint()
+
+	s.logEvent("success", "Spec refined successfully.")
+	return nil
+}

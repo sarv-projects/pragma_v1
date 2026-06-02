@@ -410,6 +410,10 @@ export function pauseRun() {
   send({ action: "pause_run" });
 }
 
+export function refineSpec(text: string) {
+  send({ action: "refine_spec", content: text });
+}
+
 export function resumeRun(runId: string) {
   send({ action: "resume_run", run_id: runId });
 }

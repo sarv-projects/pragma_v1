@@ -1,10 +1,28 @@
 <script lang="ts">
-	import { specData, specFileCount, specTestCount, approveSpec, rejectSpec } from '$lib/stores/ws';
+	import { specData, specFileCount, specTestCount, approveSpec, rejectSpec, refineSpec } from '$lib/stores/ws';
 
 	interface SpecFile { path: string; role?: string; exports?: string[]; public_api?: any[]; description?: string }
 
 	let files = $derived<SpecFile[]>(($specData as any)?.files || []);
 	let showTechnicalSpec = $state(false);
+	
+	let refineInput = $state('');
+	let isRefining = $state(false);
+
+	// When specData changes (from server), reset refining state
+	$effect(() => {
+		if ($specData) {
+			isRefining = false;
+			refineInput = '';
+		}
+	});
+
+	function handleRefine(e: KeyboardEvent) {
+		if (e.key === 'Enter' && refineInput.trim() && !isRefining) {
+			isRefining = true;
+			refineSpec(refineInput.trim());
+		}
+	}
 
 	// Extract features grouped by role
 	let features = $derived(() => {
@@ -176,31 +194,50 @@
 			{/if}
 		</div>
 
-			<!-- Simple approval panel -->
-			<div class="rounded-xl border border-[var(--brand)]/25 bg-[var(--brand)]/5 p-4 mb-2">
-				<div class="flex items-center justify-between mb-3">
-					<p class="text-sm font-medium text-[var(--text-primary)]">
-						{$specFileCount} files &middot; {$specTestCount} tests &middot; looks good?
-					</p>
-					<span class="text-xs text-[var(--text-dim)]">~$0.01&ndash;$0.03</span>
-				</div>
-				<div class="flex gap-3">
-					<button
-						onclick={approveSpec}
-						class="flex-1 rounded-xl bg-[var(--brand)] py-3 text-sm font-semibold text-white transition-fluid hover:scale-[1.01] hover:brightness-110 active:scale-[0.99]"
-					>
-						&#10003; Continue &rarr;
-					</button>
-					<button
-						onclick={rejectSpec}
-						class="rounded-xl border border-[var(--border)] px-6 py-3 text-sm font-medium text-[var(--text-muted)] transition-fluid hover:bg-[var(--bg-hover)] active:scale-[0.98]"
-					>
-						Start over
-					</button>
-				</div>
+		<!-- Refine Input -->
+		<div class="mb-6">
+			<div class="relative">
+				<input
+					type="text"
+					placeholder={isRefining ? "Refining plan..." : "Tweak this plan (e.g. 'add a stripe customer id to user')..."}
+					bind:value={refineInput}
+					onkeydown={handleRefine}
+					disabled={isRefining}
+					class="w-full rounded-xl border border-[var(--border)] bg-[var(--bg-base)] px-4 py-3 text-sm text-[var(--text-primary)] placeholder-[var(--text-dim)] focus:border-[var(--brand)] focus:outline-none focus:ring-1 focus:ring-[var(--brand)] disabled:opacity-50"
+				/>
+				{#if isRefining}
+					<div class="absolute right-3 top-3 h-4 w-4 animate-spin rounded-full border-2 border-[var(--brand)] border-t-transparent"></div>
+				{/if}
 			</div>
-			<p class="text-center text-xs text-[var(--text-dim)]">
-				Rejecting regenerates the plan (~$0.01&ndash;$0.03). Review the technical spec above before deciding.
-			</p>
+		</div>
+
+		<!-- Simple approval panel -->
+		<div class="rounded-xl border border-[var(--brand)]/25 bg-[var(--brand)]/5 p-4 mb-2">
+			<div class="flex items-center justify-between mb-3">
+				<p class="text-sm font-medium text-[var(--text-primary)]">
+					{$specFileCount} files &middot; {$specTestCount} tests &middot; looks good?
+				</p>
+				<span class="text-xs text-[var(--text-dim)]">~$0.01&ndash;$0.03</span>
+			</div>
+			<div class="flex gap-3">
+				<button
+					onclick={approveSpec}
+					disabled={isRefining}
+					class="flex-1 rounded-xl bg-[var(--brand)] py-3 text-sm font-semibold text-white transition-fluid hover:scale-[1.01] hover:brightness-110 active:scale-[0.99] disabled:opacity-50 disabled:pointer-events-none"
+				>
+					&#10003; Continue &rarr;
+				</button>
+				<button
+					onclick={rejectSpec}
+					disabled={isRefining}
+					class="rounded-xl border border-[var(--border)] px-6 py-3 text-sm font-medium text-[var(--text-muted)] transition-fluid hover:bg-[var(--bg-hover)] active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+				>
+					Start over
+				</button>
+			</div>
+		</div>
+		<p class="text-center text-xs text-[var(--text-dim)]">
+			Rejecting regenerates the plan (~$0.01&ndash;$0.03). Review the technical spec above before deciding.
+		</p>
 	</div>
 </div>

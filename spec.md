@@ -269,6 +269,9 @@ After compilation, `validate_spec()` checks:
 - No duplicate file paths
 - All `depends_on` references point to files that exist in the spec
 - Dockerfile and docker-compose.yml are present
+- `has_exports`: Files acting as code modules must have `exports` or `public_api` defined
+- `has_tests`: Spec must include test files
+- `coverage_gate`: Checks that manifest endpoints and data models appear in the spec
 
 Fatal errors abort the run. Warnings are logged but don't block.
 

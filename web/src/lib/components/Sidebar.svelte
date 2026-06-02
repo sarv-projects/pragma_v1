@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { phase, budgetRemaining, resetStores, recentRuns } from '$lib/stores/ws';
+	import { phase, budgetRemaining, resetStores, recentRuns, resumeRun } from '$lib/stores/ws';
 	import { guideActive } from '$lib/stores/settings';
 	import Settings from '$lib/components/Settings.svelte';
 
@@ -44,9 +44,12 @@
 			<div class="space-y-1">
 				{#if $recentRuns.length > 0}
 					{#each $recentRuns as run (run.run_id)}
-						<div class="rounded-lg px-3 py-2 text-sm text-[var(--text-muted)] transition-fluid hover:bg-[var(--bg-hover)]">
+						<button 
+							onclick={() => resumeRun(run.run_id)}
+							class="w-full text-left rounded-lg px-3 py-2 text-sm text-[var(--text-muted)] transition-fluid hover:bg-[var(--bg-hover)] cursor-pointer"
+						>
 							{run.project_name || run.run_id}
-						</div>
+						</button>
 					{/each}
 				{:else}
 					<div class="rounded-lg px-3 py-2 text-sm text-[var(--text-muted)] transition-fluid hover:bg-[var(--bg-hover)]">

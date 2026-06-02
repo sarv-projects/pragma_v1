@@ -31,6 +31,12 @@ No coding experience required. No subscription. Everything runs locally on your 
 - A test suite covering the main workflows
 - A README explaining how to use it
 
+## ⚡ UI Workflows
+
+Pragma's web UI provides a modern, iterative development experience:
+- **Iterative Spec Refinement:** Chat with the AI during the "Spec Review" phase to tweak database models and endpoints before generation begins.
+- **Previous Project Gallery:** A sidebar tracks all your historical runs, allowing you to instantly revisit past projects and download their source code as a ZIP archive.
+
 You own the code. It lives on your disk, not in someone's cloud.
 
 ## Get Started
