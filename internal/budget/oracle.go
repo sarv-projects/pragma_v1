@@ -2,7 +2,6 @@ package budget
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -34,7 +33,7 @@ type RunEntry struct {
 
 // Oracle manages the spending limit.
 type Oracle struct {
-	mu           sync.Mutex
+	mu           sync.RWMutex
 	lifetime     float64
 	perRunCap    float64
 	spent        float64
@@ -84,8 +83,6 @@ func (o *Oracle) CanSpend(estimatedOutputTokens int) bool {
 // cached rate; the remainder is billed at the standard input rate.
 func (o *Oracle) Record(inputTokens, outputTokens, cachedInputTokens int) {
 	o.mu.Lock()
-	defer o.mu.Unlock()
-
 	freshInput := inputTokens - cachedInputTokens
 	if freshInput < 0 {
 		freshInput = 0
@@ -96,7 +93,10 @@ func (o *Oracle) Record(inputTokens, outputTokens, cachedInputTokens int) {
 	total := inputCost + outputCost
 	o.spent += total
 	o.runSpent += total
-	o.persist()
+	// Copy state for persistence outside lock
+	snapshot := o.snapshotLocked()
+	o.mu.Unlock()
+	o.persistSnapshot(snapshot)
 }
 
 // ResetRun zeroes the runSpent counter at the start of a new run.
@@ -108,21 +108,21 @@ func (o *Oracle) ResetRun() {
 
 func (o *Oracle) RecordRunCompletion() {
 	o.mu.Lock()
-	defer o.mu.Unlock()
 	o.runs = append(o.runs, RunEntry{
 		Timestamp: time.Now().Format(time.RFC3339),
 		Spent:     o.runSpent,
 	})
 	o.runsComplete++
-	o.persist()
+	snapshot := o.snapshotLocked()
+	o.mu.Unlock()
+	o.persistSnapshot(snapshot)
 }
 
 
-// Status returns a snapshot of the current budget. Mode is always "fast"
-// (DeepSeek direct API) since that is the only provider Pragma supports.
+// Status returns a snapshot of the current budget.
 func (o *Oracle) Status() Status {
-	o.mu.Lock()
-	defer o.mu.Unlock()
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	return Status{
 		Mode:         "fast",
 		LifetimeCap:  o.lifetime,
@@ -134,27 +134,27 @@ func (o *Oracle) Status() Status {
 	}
 }
 
-func (o *Oracle) persist() error {
-	s := Status{
+// snapshotLocked returns a Status snapshot. Must be called with o.mu held.
+func (o *Oracle) snapshotLocked() Status {
+	return Status{
 		LifetimeCap:  o.lifetime,
 		PerRunCap:    o.perRunCap,
 		TotalSpent:   o.spent,
 		RunsComplete: o.runsComplete,
 		Runs:         o.runs,
 	}
+}
+
+// persistSnapshot writes the budget state to disk. Called outside the lock.
+func (o *Oracle) persistSnapshot(s Status) {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
-		return err
+		return
 	}
 
 	tmpFile := o.path + ".tmp"
 	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return err
+		return
 	}
-
-	if err := os.Rename(tmpFile, o.path); err != nil {
-		return fmt.Errorf("failed to commit budget file: %w", err)
-	}
-
-	return nil
+	os.Rename(tmpFile, o.path)
 }

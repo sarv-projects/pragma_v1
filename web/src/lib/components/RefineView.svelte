@@ -93,7 +93,6 @@ ${(impact.risk_reasons || []).length > 0 ? `**Risks:**\n${(impact.risk_reasons |
 				conversationHistory.push({ role: 'assistant', content: '✅ Changes applied successfully! Your project has been updated.' });
 				impact = null;
 				delta = null;
-				// Reset the refinement stores so the next extend uses the new state
 				checkpointSpec.set(data.updated_spec || {});
 			}
 		} catch (e) {
@@ -108,377 +107,124 @@ ${(impact.risk_reasons || []).length > 0 ? `**Risks:**\n${(impact.risk_reasons |
 		delta = null;
 		error = '';
 	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter' && !e.shiftKey) {
+			e.preventDefault();
+			sendMessage();
+		}
+	}
 </script>
 
-<div class="refine-container">
-	<div class="refine-header">
-		<h2>Refine Your Project</h2>
-		<p class="subtitle">Chat with Pragma to add features, fix issues, or tweak your app.</p>
+<div class="flex h-full flex-col max-w-3xl mx-auto p-4 md:p-6">
+	<!-- Header -->
+	<div class="text-center mb-4">
+		<h2 class="text-xl font-bold text-[var(--text-primary)]">Refine Your Project</h2>
+		<p class="text-sm text-[var(--text-dim)] mt-1">Chat with Pragma to add features, fix issues, or tweak your app.</p>
 	</div>
 
+	<!-- Loading indicators -->
 	{#if isAnalyzing}
-		<div class="analyzing-indicator" role="status" aria-live="polite">
-			<div class="spinner"></div>
-			<span>Analyzing impact of your changes...</span>
+		<div class="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-base)] border border-[var(--border)] mb-3" role="status" aria-live="polite">
+			<div class="h-4 w-4 border-2 border-[var(--border)] border-t-[var(--brand)] rounded-full animate-spin"></div>
+			<span class="text-sm text-[var(--text-muted)]">Analyzing impact of your changes...</span>
 		</div>
 	{/if}
 
 	{#if isApplying}
-		<div class="applying-indicator" role="status" aria-live="polite">
-			<div class="spinner"></div>
-			<span>Applying your approved changes...</span>
+		<div class="flex items-center gap-3 p-3 rounded-lg bg-[var(--bg-base)] border border-[var(--border)] mb-3" role="status" aria-live="polite">
+			<div class="h-4 w-4 border-2 border-[var(--border)] border-t-[var(--accent)] rounded-full animate-spin"></div>
+			<span class="text-sm text-[var(--text-muted)]">Applying your approved changes...</span>
 		</div>
 	{/if}
 
+	<!-- Impact analysis card -->
 	{#if impact && delta}
-		<div class="impact-card" role="region" aria-label="Change impact analysis">
-			<div class="impact-header">
-				<h3>Proposed Changes</h3>
-				<button class="dismiss-btn" onclick={dismissAnalysis} aria-label="Dismiss analysis">✕</button>
-			</div>
-			
-			<div class="impact-summary">
-				<p>{impact.impact_summary}</p>
+		<div class="rounded-xl border border-[var(--border)] bg-[var(--bg-raised)] p-4 mb-3" role="region" aria-label="Change impact analysis">
+			<div class="flex items-center justify-between mb-3">
+				<h3 class="text-sm font-semibold text-[var(--text-primary)]">Proposed Changes</h3>
+				<button onclick={dismissAnalysis} aria-label="Dismiss analysis" class="rounded p-1 text-[var(--text-dim)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)] transition-fluid">
+					<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+				</button>
 			</div>
 
+			<p class="text-sm text-[var(--text-muted)] mb-3">{impact.impact_summary}</p>
+
 			{#if (impact.affected_files || []).length > 0}
-				<div class="impact-section">
-					<strong>Modified files:</strong>
-					<ul>
+				<div class="mb-2">
+					<p class="text-xs font-medium text-[var(--text-dim)] mb-1">Modified files:</p>
+					<div class="flex flex-wrap gap-1">
 						{#each impact.affected_files || [] as file}
-							<li><code>{file}</code></li>
+							<code class="text-xs bg-[var(--bg-base)] text-[var(--accent)] px-1.5 py-0.5 rounded">{file}</code>
 						{/each}
-					</ul>
+					</div>
 				</div>
 			{/if}
 
 			{#if (impact.new_files || []).length > 0}
-				<div class="impact-section">
-					<strong>New files:</strong>
-					<ul>
+				<div class="mb-2">
+					<p class="text-xs font-medium text-[var(--text-dim)] mb-1">New files:</p>
+					<div class="flex flex-wrap gap-1">
 						{#each impact.new_files || [] as file}
-							<li><code>{file}</code></li>
+							<code class="text-xs bg-[var(--bg-base)] text-[var(--success)] px-1.5 py-0.5 rounded">{file}</code>
 						{/each}
-					</ul>
+					</div>
 				</div>
 			{/if}
 
 			{#if (impact.risk_reasons || []).length > 0}
-				<div class="impact-section risk">
-					<strong>⚠️ Potential risks:</strong>
-					<ul>
+				<div class="mt-2 p-2.5 rounded-lg bg-[var(--warning)]/10 border border-[var(--warning)]/20">
+					<p class="text-xs font-medium text-[var(--warning)] mb-1">Potential risks:</p>
+					<ul class="space-y-0.5">
 						{#each impact.risk_reasons || [] as reason}
-							<li>{reason}</li>
+							<li class="text-xs text-[var(--text-muted)]">• {reason}</li>
 						{/each}
 					</ul>
 				</div>
 			{/if}
 
-			<div class="impact-actions">
-				<button class="approve-btn" onclick={approveChanges} disabled={isApplying}>
+			<div class="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]">
+				<button onclick={approveChanges} disabled={isApplying} class="flex-1 rounded-lg bg-[var(--success)] py-2.5 text-sm font-medium text-white transition-fluid hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed">
 					{isApplying ? 'Applying...' : '✅ Approve & Apply'}
 				</button>
-				<button class="cancel-btn" onclick={dismissAnalysis} disabled={isApplying}>
+				<button onclick={dismissAnalysis} disabled={isApplying} class="rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-4 py-2.5 text-sm text-[var(--text-muted)] transition-fluid hover:bg-[var(--bg-hover)] disabled:opacity-50">
 					Cancel
 				</button>
 			</div>
 		</div>
 	{/if}
 
-	<div class="conversation" role="log" aria-live="polite" aria-label="Conversation history">
+	<!-- Conversation -->
+	<div class="flex-1 min-h-0 overflow-y-auto space-y-3 py-2" role="log" aria-live="polite" aria-label="Conversation history">
 		{#each conversationHistory as msg}
-			<div class="message {msg.role}">
-				<span class="role-label">{msg.role === 'user' ? 'You' : 'Pragma'}</span>
-				<div class="content">{@html sanitizeHtml(msg.content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>'))}</div>
+			<div class="flex flex-col {msg.role === 'user' ? 'items-end ml-8' : 'items-start mr-8'}">
+				<span class="text-xs font-semibold uppercase tracking-wider mb-1 {msg.role === 'user' ? 'text-[var(--brand)]' : 'text-[var(--text-dim)]'}">
+					{msg.role === 'user' ? 'You' : 'Pragma'}
+				</span>
+				<div class="rounded-lg px-3 py-2 text-sm leading-relaxed {msg.role === 'user' ? 'bg-[var(--brand)]/15 text-[var(--text-primary)]' : 'bg-[var(--bg-base)] text-[var(--text-muted)]'}">
+					{@html sanitizeHtml(msg.content.replace(/\*\*(.*?)\*\*/g, '<strong class="text-[var(--text-primary)]">$1</strong>').replace(/\n/g, '<br>'))}
+				</div>
 			</div>
 		{/each}
 	</div>
 
-	<form class="chat-input" onsubmit={(e) => { e.preventDefault(); sendMessage(); }}>
-		<input 
-			type="text" 
-			bind:value={userMessage} 
-			placeholder="e.g. Add a dark mode toggle to the settings page..." 
+	<!-- Chat input -->
+	<form class="flex gap-2 mt-3 pt-3 border-t border-[var(--border)]" onsubmit={(e) => { e.preventDefault(); sendMessage(); }}>
+		<input
+			type="text"
+			bind:value={userMessage}
+			onkeydown={handleKeydown}
+			placeholder="e.g. Add a dark mode toggle to the settings page..."
 			disabled={isAnalyzing || isApplying}
 			aria-label="Your change request"
+			class="flex-1 rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-dim)] focus:border-[var(--brand)] focus:outline-none disabled:opacity-50"
 		/>
-		<button type="submit" disabled={!userMessage.trim() || isAnalyzing || isApplying}>
+		<button
+			type="submit"
+			disabled={!userMessage.trim() || isAnalyzing || isApplying}
+			class="rounded-lg bg-[var(--brand)] px-4 py-2.5 text-sm font-medium text-white transition-fluid hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
+		>
 			{isAnalyzing ? '...' : 'Send'}
 		</button>
 	</form>
 </div>
-
-<style>
-	.refine-container {
-		display: flex;
-		flex-direction: column;
-		height: 100%;
-		max-width: 800px;
-		margin: 0 auto;
-		padding: 1rem;
-	}
-
-	.refine-header {
-		text-align: center;
-		margin-bottom: 1.5rem;
-	}
-
-	.refine-header h2 {
-		font-size: 1.5rem;
-		font-weight: 600;
-		color: #1a1a2e;
-		margin: 0;
-	}
-
-	.subtitle {
-		color: #6b7280;
-		font-size: 0.875rem;
-		margin: 0.5rem 0 0;
-	}
-
-	.analyzing-indicator, .applying-indicator {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-		padding: 1rem;
-		background: #f3f4f6;
-		border-radius: 0.5rem;
-		margin-bottom: 1rem;
-		color: #4b5563;
-		font-size: 0.875rem;
-	}
-
-	.spinner {
-		width: 1rem;
-		height: 1rem;
-		border: 2px solid #d1d5db;
-		border-top-color: #3b82f6;
-		border-radius: 50%;
-		animation: spin 0.6s linear infinite;
-	}
-
-	@keyframes spin {
-		to { transform: rotate(360deg); }
-	}
-
-	.impact-card {
-		background: #fff;
-		border: 1px solid #e5e7eb;
-		border-radius: 0.75rem;
-		padding: 1.25rem;
-		margin-bottom: 1rem;
-		box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-	}
-
-	.impact-header {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		margin-bottom: 1rem;
-	}
-
-	.impact-header h3 {
-		font-size: 1rem;
-		font-weight: 600;
-		margin: 0;
-		color: #1a1a2e;
-	}
-
-	.dismiss-btn {
-		background: none;
-		border: none;
-		cursor: pointer;
-		font-size: 1rem;
-		color: #9ca3af;
-		padding: 0.25rem;
-	}
-
-	.dismiss-btn:hover {
-		color: #6b7280;
-	}
-
-	.impact-summary {
-		font-size: 0.9375rem;
-		color: #374151;
-		margin-bottom: 1rem;
-		line-height: 1.5;
-	}
-
-	.impact-section {
-		margin-bottom: 0.75rem;
-	}
-
-	.impact-section strong {
-		font-size: 0.8125rem;
-		color: #6b7280;
-	}
-
-	.impact-section ul {
-		margin: 0.5rem 0 0;
-		padding-left: 1.25rem;
-	}
-
-	.impact-section li {
-		font-size: 0.875rem;
-		color: #374151;
-		margin-bottom: 0.25rem;
-	}
-
-	.impact-section code {
-		background: #f3f4f6;
-		padding: 0.125rem 0.375rem;
-		border-radius: 0.25rem;
-		font-size: 0.8125rem;
-	}
-
-	.impact-section.risk {
-		background: #fef3c7;
-		padding: 0.75rem;
-		border-radius: 0.5rem;
-		margin-top: 1rem;
-	}
-
-	.impact-section.risk strong {
-		color: #92400e;
-	}
-
-	.impact-section.risk li {
-		color: #78350f;
-	}
-
-	.impact-actions {
-		display: flex;
-		gap: 0.75rem;
-		margin-top: 1rem;
-		padding-top: 1rem;
-		border-top: 1px solid #f3f4f6;
-	}
-
-	.approve-btn {
-		flex: 1;
-		padding: 0.75rem 1rem;
-		background: #10b981;
-		color: white;
-		border: none;
-		border-radius: 0.5rem;
-		font-size: 0.9375rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.approve-btn:hover:not(:disabled) {
-		background: #059669;
-	}
-
-	.approve-btn:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-
-	.cancel-btn {
-		padding: 0.75rem 1rem;
-		background: #f3f4f6;
-		color: #4b5563;
-		border: none;
-		border-radius: 0.5rem;
-		font-size: 0.9375rem;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.cancel-btn:hover:not(:disabled) {
-		background: #e5e7eb;
-	}
-
-	.conversation {
-		flex: 1;
-		overflow-y: auto;
-		padding: 0.5rem 0;
-	}
-
-	.message {
-		display: flex;
-		flex-direction: column;
-		margin-bottom: 1rem;
-		padding: 0.75rem 1rem;
-		border-radius: 0.5rem;
-	}
-
-	.message.user {
-		background: #dbeafe;
-		align-self: flex-end;
-		margin-left: 2rem;
-	}
-
-	.message.assistant {
-		background: #f3f4f6;
-		align-self: flex-start;
-		margin-right: 2rem;
-	}
-
-	.role-label {
-		font-size: 0.75rem;
-		font-weight: 600;
-		color: #6b7280;
-		margin-bottom: 0.25rem;
-		text-transform: uppercase;
-	}
-
-	.message.user .role-label {
-		color: #2563eb;
-	}
-
-	.message.assistant .role-label {
-		color: #6b7280;
-	}
-
-	.content {
-		font-size: 0.9375rem;
-		line-height: 1.5;
-		color: #374151;
-	}
-
-	.chat-input {
-		display: flex;
-		gap: 0.75rem;
-		margin-top: 1rem;
-		padding-top: 1rem;
-		border-top: 1px solid #e5e7eb;
-	}
-
-	.chat-input input {
-		flex: 1;
-		padding: 0.75rem 1rem;
-		border: 1px solid #e5e7eb;
-		border-radius: 0.5rem;
-		font-size: 0.9375rem;
-		outline: none;
-		transition: border-color 0.15s;
-	}
-
-	.chat-input input:focus {
-		border-color: #3b82f6;
-	}
-
-	.chat-input button {
-		padding: 0.75rem 1.5rem;
-		background: #3b82f6;
-		color: white;
-		border: none;
-		border-radius: 0.5rem;
-		font-size: 0.9375rem;
-		font-weight: 500;
-		cursor: pointer;
-		transition: background 0.15s;
-	}
-
-	.chat-input button:hover:not(:disabled) {
-		background: #2563eb;
-	}
-
-	.chat-input button:disabled {
-		opacity: 0.6;
-		cursor: not-allowed;
-	}
-</style>

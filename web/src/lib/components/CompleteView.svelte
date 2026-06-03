@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { runResult, resetStores, phase, manifest } from '$lib/stores/ws';
+	import { runResult, resetStores, phase, manifest, runtimeValidationError } from '$lib/stores/ws';
 	import { checkpointManifest, checkpointSpec } from '$lib/stores/refine';
 
 	// Request notification permission on mount
@@ -22,6 +22,10 @@
 	let runningDocker = $state(false);
 	let dockerOutput = $state('');
 	let dockerError = $state('');
+	let previewActive = $state(false);
+	let previewUrl = $state('');
+	let previewLoading = $state(false);
+	let previewError = $state('');
 
 	$effect(() => {
 		const controller = new AbortController();
@@ -82,6 +86,40 @@
 			runningDocker = false;
 		}
 	}
+
+	async function startPreview() {
+		if (!$runResult) return;
+		const runId = $runResult.output_path.split(/[/\\]/).pop();
+		if (!runId) return;
+		previewLoading = true;
+		previewError = '';
+		try {
+			const res = await fetch('/api/preview/start', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ run_id: runId })
+			});
+			const data = await res.json();
+			if (!res.ok) {
+				previewError = data.error || 'Failed to start preview';
+			} else {
+				previewActive = true;
+				previewUrl = data.preview_url;
+			}
+		} catch {
+			previewError = 'Network error';
+		} finally {
+			previewLoading = false;
+		}
+	}
+
+	async function stopPreview() {
+		try {
+			await fetch('/api/preview/stop', { method: 'POST' });
+		} catch { /* ignore */ }
+		previewActive = false;
+		previewUrl = '';
+	}
 </script>
 
 <div class="flex h-full items-center justify-center px-4 overflow-y-auto py-8">
@@ -91,6 +129,20 @@
 				<div class="mb-3 text-4xl">🎉</div>
 				<h2 class="text-2xl font-bold text-[var(--text-primary)]">Build Complete</h2>
 			</div>
+
+			<!-- Runtime validation status -->
+			{#if $runtimeValidationError}
+				<div class="mb-4 rounded-lg bg-[var(--bg-base)] border border-yellow-500/30 p-3 text-sm" role="alert" aria-live="polite">
+					<p class="text-yellow-400 font-medium">⚠️ Quick health check found issues</p>
+					<p class="text-[var(--text-muted)] text-xs mt-1">{$runtimeValidationError.message}</p>
+					{#if $runtimeValidationError.logs}
+						<details class="mt-2 text-xs text-[var(--text-dim)]">
+							<summary>Show error details</summary>
+							<pre class="mt-1 whitespace-pre-wrap overflow-x-auto max-h-40">{$runtimeValidationError.logs}</pre>
+						</details>
+					{/if}
+				</div>
+			{/if}
 
 			<div class="mb-6 space-y-3 text-sm">
 				<div class="flex justify-between">
@@ -150,6 +202,41 @@
 					{#if dockerError.includes('Docker not found')}
 						<a href="https://www.docker.com/products/docker-desktop/" target="_blank" rel="noopener noreferrer" class="mt-1 block text-[var(--brand-light)] underline">Install Docker Desktop &#x2192;</a>
 					{/if}
+				</div>
+			{/if}
+
+			<!-- Live Preview -->
+			{#if !previewActive}
+				<div class="mb-3">
+					<button
+						onclick={startPreview}
+						disabled={previewLoading}
+						class="w-full rounded-xl bg-[var(--accent)] py-3 text-sm font-semibold text-white transition-fluid hover:brightness-110 disabled:opacity-50"
+					>
+						{previewLoading ? '&#9203; Starting preview...' : '&#9654; Live Preview'}
+					</button>
+					{#if previewError}
+						<p class="mt-1 text-xs text-red-400">{previewError}</p>
+					{/if}
+				</div>
+			{:else}
+				<div class="mb-3 rounded-xl overflow-hidden border border-[var(--border)]">
+					<div class="flex items-center justify-between bg-[var(--bg-base)] px-3 py-2">
+						<span class="text-xs text-[var(--accent)] font-mono">{previewUrl}</span>
+						<button
+							onclick={stopPreview}
+							class="rounded px-2 py-1 text-xs text-red-400 hover:bg-[var(--bg-hover)]"
+						>
+							Stop
+						</button>
+					</div>
+					<iframe
+						src={previewUrl}
+						title="Live Preview"
+						class="w-full bg-white"
+						style="height: 400px;"
+						sandbox="allow-scripts allow-same-origin allow-forms"
+					></iframe>
 				</div>
 			{/if}
 

@@ -68,6 +68,15 @@ func main() {
 	// (env vars already set take precedence).
 	daemonEnv := keyvault.EnvForDaemon(os.LookupEnv)
 
+	// Inject provider config as environment variables for BYOK support
+	daemonEnv = append(daemonEnv,
+		"PRAGMA_PROVIDER_NAME="+cfg.Provider.Name,
+		"PRAGMA_PROVIDER_BASE_URL="+cfg.Provider.BaseURL,
+		"PRAGMA_PROVIDER_REASONING_MODEL="+cfg.Provider.ReasoningModel,
+		"PRAGMA_PROVIDER_CODEGEN_MODEL="+cfg.Provider.CodegenModel,
+		fmt.Sprintf("PRAGMA_PROVIDER_SUPPORTS_THINKING=%v", cfg.Provider.SupportsThinking),
+	)
+
 	if *headless {
 		runHeadless(cfg, daemonEnv)
 		return

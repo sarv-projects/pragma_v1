@@ -4,12 +4,29 @@
 	let provider = $state('deepseek');
 	let apiKey = $state('');
 	let baseUrl = $state('');
+	let reasoningModel = $state('');
+	let codegenModel = $state('');
+	let supportsThinking = $state(true);
 	let saving = $state(false);
 	let error = $state('');
 	let success = $state('');
 	let keys = $state<Record<string, { configured: boolean; masked: string }>>({});
+	let discoveredModels = $state<string[]>([]);
 
 	const { onClose }: { onClose: () => void } = $props();
+
+	const providers = [
+		{ id: 'deepseek', name: 'DeepSeek', url: 'https://api.deepseek.com', thinking: true },
+		{ id: 'openai', name: 'OpenAI', url: 'https://api.openai.com/v1', thinking: true },
+		{ id: 'openrouter', name: 'OpenRouter', url: 'https://openrouter.ai/api/v1', thinking: false },
+		{ id: 'together', name: 'Together AI', url: 'https://api.together.xyz/v1', thinking: false },
+		{ id: 'ollama', name: 'Ollama (Local)', url: 'http://localhost:11434/v1', thinking: false },
+		{ id: 'custom', name: 'Custom (BYOK)', url: '', thinking: false },
+	];
+
+	function getProviderInfo(id: string) {
+		return providers.find(p => p.id === id) || providers[providers.length - 1];
+	}
 
 	async function loadSettings() {
 		try {
@@ -26,7 +43,22 @@
 		onClose();
 	}
 
-	async function saveKey() {
+	function handleKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			handleClose();
+		}
+	}
+
+	function onProviderChange() {
+		const info = getProviderInfo(provider);
+		baseUrl = info.url;
+		supportsThinking = info.thinking;
+		discoveredModels = [];
+		reasoningModel = '';
+		codegenModel = '';
+	}
+
+	async function validateAndDiscover() {
 		if (!apiKey.trim()) {
 			error = 'Please enter an API key';
 			return;
@@ -35,9 +67,9 @@
 		saving = true;
 		error = '';
 		success = '';
+		discoveredModels = [];
 
 		try {
-			// Validate first
 			const valRes = await fetch('/api/validate-key', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -55,7 +87,26 @@
 				return;
 			}
 
-			// Save
+			discoveredModels = valData.models || [];
+			success = `Valid! Found ${discoveredModels.length} models.`;
+		} catch {
+			error = 'Network error';
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function saveKey() {
+		if (!apiKey.trim()) {
+			error = 'Please enter an API key';
+			return;
+		}
+
+		saving = true;
+		error = '';
+		success = '';
+
+		try {
 			const saveRes = await fetch('/api/settings', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -63,7 +114,10 @@
 					provider,
 					api_key: apiKey,
 					base_url: baseUrl,
-					mode: 'fast'
+					mode: 'fast',
+					reasoning_model: reasoningModel || undefined,
+					codegen_model: codegenModel || undefined,
+					supports_thinking: supportsThinking
 				})
 			});
 
@@ -73,7 +127,7 @@
 				return;
 			}
 
-			success = 'Key saved successfully';
+			success = 'Settings saved successfully';
 			apiKey = '';
 			await loadSettings();
 		} catch {
@@ -89,8 +143,10 @@
 	});
 </script>
 
-<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-	<div class="w-full max-w-md rounded-xl border border-[var(--border)] bg-[var(--bg-raised)] p-6 shadow-2xl">
+<svelte:window on:keydown={handleKeydown} />
+
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Settings">
+	<div class="w-full max-w-lg rounded-xl border border-[var(--border)] bg-[var(--bg-raised)] p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
 		<!-- Header -->
 		<div class="mb-6 flex items-center justify-between">
 			<h2 class="text-lg font-semibold text-[var(--text-primary)]">Settings</h2>
@@ -120,25 +176,26 @@
 			{/each}
 		</div>
 
-		<!-- Update key -->
+		<!-- Provider selection -->
 		<div class="space-y-3">
-			<p class="text-xs font-medium uppercase tracking-wider text-[var(--text-dim)]">Update Key</p>
+			<p class="text-xs font-medium uppercase tracking-wider text-[var(--text-dim)]">Codegen Provider</p>
+			<p class="text-xs text-[var(--text-dim)]">Groq is always used for interview & healing. Choose your code generation provider below.</p>
 
 			<select
 				bind:value={provider}
+				onchange={onProviderChange}
 				class="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--brand)] focus:outline-none"
 			>
-				<option value="deepseek">DeepSeek</option>
-				<option value="groq">Groq</option>
-				<option value="openai">OpenAI</option>
-				<option value="custom">Custom</option>
+				{#each providers as p}
+					<option value={p.id}>{p.name}</option>
+				{/each}
 			</select>
 
-			{#if provider === 'custom'}
+			{#if provider === 'custom' || provider === 'ollama'}
 				<input
 					type="text"
 					bind:value={baseUrl}
-					placeholder="Base URL"
+					placeholder="Base URL (e.g., http://localhost:11434/v1)"
 					class="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-dim)] focus:border-[var(--brand)] focus:outline-none"
 				/>
 			{/if}
@@ -146,9 +203,54 @@
 			<input
 				type="password"
 				bind:value={apiKey}
-				placeholder="New API key"
+				placeholder="API key (not needed for local Ollama)"
 				class="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-dim)] focus:border-[var(--brand)] focus:outline-none"
 			/>
+
+			<button
+				onclick={validateAndDiscover}
+				disabled={saving || !apiKey.trim()}
+				class="w-full rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] transition-fluid hover:bg-[var(--bg-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
+			>
+				{saving ? 'Validating...' : 'Validate & Discover Models'}
+			</button>
+
+			{#if discoveredModels.length > 0}
+				<div class="space-y-2">
+					<p class="text-xs text-[var(--accent)]">Discovered {discoveredModels.length} models</p>
+
+					<label class="block text-xs text-[var(--text-dim)]">
+						Reasoning Model (for spec compilation)
+						<select
+							bind:value={reasoningModel}
+							class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--brand)] focus:outline-none"
+						>
+							<option value="">Auto-detect</option>
+							{#each discoveredModels as m}
+								<option value={m}>{m}</option>
+							{/each}
+						</select>
+					</label>
+
+					<label class="block text-xs text-[var(--text-dim)]">
+						Codegen Model (for file generation)
+						<select
+							bind:value={codegenModel}
+							class="mt-1 w-full rounded-lg border border-[var(--border)] bg-[var(--bg-base)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--brand)] focus:outline-none"
+						>
+							<option value="">Auto-detect</option>
+							{#each discoveredModels as m}
+								<option value={m}>{m}</option>
+							{/each}
+						</select>
+					</label>
+
+					<label class="flex items-center gap-2 text-xs text-[var(--text-dim)]">
+						<input type="checkbox" bind:checked={supportsThinking} class="rounded" />
+						Model supports thinking/reasoning mode
+					</label>
+				</div>
+			{/if}
 
 			{#if error}
 				<p class="text-sm text-red-400">{error}</p>
@@ -160,10 +262,10 @@
 
 			<button
 				onclick={saveKey}
-				disabled={saving || !apiKey.trim()}
+				disabled={saving}
 				class="w-full rounded-lg bg-[var(--brand)] px-3 py-2.5 text-sm font-medium text-white transition-fluid hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
 			>
-				{saving ? 'Saving...' : 'Validate & Save'}
+				{saving ? 'Saving...' : 'Save Settings'}
 			</button>
 		</div>
 	</div>

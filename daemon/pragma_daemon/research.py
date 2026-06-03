@@ -32,6 +32,20 @@ ENTITY_REPOS = {
 
 DEEPWIKI_URL = "https://mcp.deepwiki.com/mcp"
 
+# Shared HTTP client for DeepWiki calls — reused across all research queries
+# to avoid creating/destroying client pools per call.
+_deepwiki_client: httpx.AsyncClient | None = None
+
+
+async def _get_deepwiki_client() -> httpx.AsyncClient:
+    """Return a shared HTTP client for DeepWiki calls."""
+    global _deepwiki_client
+    if _deepwiki_client is None or _deepwiki_client.is_closed:
+        _deepwiki_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=30.0)
+        )
+    return _deepwiki_client
+
 
 def _extract_entities(manifest: dict) -> list[str]:
     """Word-boundary match manifest text against the known-entity table.
@@ -174,57 +188,57 @@ async def deepwiki_ask(repo: str, question: str) -> str | None:
         "Content-Type": "application/json",
     }
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # 1. initialize handshake
-            init_payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2024-11-05",
-                    "capabilities": {},
-                    "clientInfo": {"name": "pragma", "version": "1.0"},
-                },
-            }
-            init_resp = await client.post(DEEPWIKI_URL, json=init_payload, headers=headers)
-            session_id = init_resp.headers.get("mcp-session-id") or init_resp.headers.get("Mcp-Session-Id")
-            call_headers = dict(headers)
-            if session_id:
-                call_headers["Mcp-Session-Id"] = session_id
-                # 2. notify initialized (best-effort)
-                try:
-                    await client.post(
-                        DEEPWIKI_URL,
-                        json={"jsonrpc": "2.0", "method": "notifications/initialized"},
-                        headers=call_headers,
-                    )
-                except Exception:
-                    pass
+        client = await _get_deepwiki_client()
+        # 1. initialize handshake
+        init_payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "pragma", "version": "1.0"},
+            },
+        }
+        init_resp = await client.post(DEEPWIKI_URL, json=init_payload, headers=headers)
+        session_id = init_resp.headers.get("mcp-session-id") or init_resp.headers.get("Mcp-Session-Id")
+        call_headers = dict(headers)
+        if session_id:
+            call_headers["Mcp-Session-Id"] = session_id
+            # 2. notify initialized (best-effort)
+            try:
+                await client.post(
+                    DEEPWIKI_URL,
+                    json={"jsonrpc": "2.0", "method": "notifications/initialized"},
+                    headers=call_headers,
+                )
+            except Exception:
+                pass
 
-            # 3. tools/call ask_question
-            call_payload = {
-                "jsonrpc": "2.0",
-                "id": 2,
-                "method": "tools/call",
-                "params": {
-                    "name": "ask_question",
-                    "arguments": {"repoName": repo, "question": question},
-                },
-            }
-            resp = await client.post(DEEPWIKI_URL, json=call_payload, headers=call_headers)
-            if resp.status_code != 200:
-                logger.warning(f"DeepWiki tools/call HTTP {resp.status_code}")
-                return None
+        # 3. tools/call ask_question
+        call_payload = {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "ask_question",
+                "arguments": {"repoName": repo, "question": question},
+            },
+        }
+        resp = await client.post(DEEPWIKI_URL, json=call_payload, headers=call_headers)
+        if resp.status_code != 200:
+            logger.warning(f"DeepWiki tools/call HTTP {resp.status_code}")
+            return None
 
-            data = _parse_mcp_response(resp)
-            if not data:
-                return None
-            result = data.get("result", {})
-            if isinstance(result, dict) and "content" in result:
-                parts = result["content"]
-                return "\n".join(p.get("text", "") for p in parts if p.get("type") == "text") or None
-            if isinstance(result, str):
-                return result
+        data = _parse_mcp_response(resp)
+        if not data:
+            return None
+        result = data.get("result", {})
+        if isinstance(result, dict) and "content" in result:
+            parts = result["content"]
+            return "\n".join(p.get("text", "") for p in parts if p.get("type") == "text") or None
+        if isinstance(result, str):
+            return result
     except Exception as e:
         logger.warning(f"Failed to reach DeepWiki MCP: {e}")
     return None

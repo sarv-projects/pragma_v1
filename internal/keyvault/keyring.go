@@ -18,6 +18,7 @@ const (
 	KeyDeepSeek = "deepseek"
 	KeyGroq     = "groq"
 	KeyCustom   = "custom"
+	KeyProvider = "provider" // BYOK codegen provider API key
 )
 
 // credFileMu serializes access to the fallback credentials file.
@@ -197,6 +198,7 @@ func EnvForDaemon(lookupEnv func(string) (string, bool)) []string {
 		KeyDeepSeek: "DEEPSEEK_API_KEY",
 		KeyGroq:     "GROQ_API_KEY",
 		KeyCustom:   "CUSTOM_API_KEY",
+		KeyProvider: "PROVIDER_API_KEY",
 	}
 	var out []string
 	for keyName, envName := range mapping {

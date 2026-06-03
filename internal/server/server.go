@@ -150,6 +150,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/extend-project", s.handleExtendProjectHTTP)
 	s.mux.HandleFunc("POST /api/apply-delta", s.handleApplyDelta)
 
+	// Live preview
+	s.mux.HandleFunc("POST /api/preview/start", s.handleStartPreview)
+	s.mux.HandleFunc("POST /api/preview/stop", s.handleStopPreview)
+	s.mux.HandleFunc("GET /api/preview/status", s.handlePreviewStatus)
+	s.mux.HandleFunc("/api/preview/proxy/", s.handlePreviewProxy)
+
 	// WebSocket
 	s.mux.HandleFunc("/ws", s.handleWS)
 
@@ -224,7 +230,6 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 func (s *Server) forwardEvents(ctx context.Context) {
 	s.mu.RLock()
 	events := s.events
-	ledger := s.ledger
 	s.mu.RUnlock()
 	if events == nil {
 		return
@@ -236,10 +241,6 @@ func (s *Server) forwardEvents(ctx context.Context) {
 		case ev, ok := <-events:
 			if !ok {
 				return
-			}
-			// Side-effect: record completed runs in the ledger
-			if rc, ok := ev.(pipeline.RunCompleteEvent); ok && ledger != nil {
-				ledger.RecordProject(rc.ProjectName, rc.ProjectName, rc.TotalCost)
 			}
 			msg := eventToJSON(ev)
 			if msg != nil {

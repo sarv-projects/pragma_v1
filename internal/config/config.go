@@ -16,11 +16,12 @@ const (
 )
 
 type Config struct {
-	Mode    string       `toml:"mode" json:"mode"`
-	Budget  BudgetConfig `toml:"budget" json:"budget"`
-	Output  OutputConfig `toml:"output" json:"output"`
-	Profile string       `toml:"profile" json:"profile"`
-	Daemon  DaemonConfig `toml:"daemon" json:"daemon"`
+	Mode     string         `toml:"mode" json:"mode"`
+	Budget   BudgetConfig   `toml:"budget" json:"budget"`
+	Output   OutputConfig   `toml:"output" json:"output"`
+	Profile  string         `toml:"profile" json:"profile"`
+	Daemon   DaemonConfig   `toml:"daemon" json:"daemon"`
+	Provider ProviderConfig `toml:"provider" json:"provider"`
 }
 
 type BudgetConfig struct {
@@ -35,6 +36,16 @@ type OutputConfig struct {
 
 type DaemonConfig struct {
 	PythonExecutable string `toml:"python_executable" json:"python_executable"`
+}
+
+// ProviderConfig holds BYOK (Bring Your Own Key) settings for the codegen LLM.
+// DeepSeek is the default. Users can switch to any OpenAI-compatible provider.
+type ProviderConfig struct {
+	Name            string `toml:"name" json:"name"`                         // "deepseek", "openai", "ollama", "openrouter", "custom"
+	BaseURL         string `toml:"base_url" json:"base_url"`                 // API endpoint
+	ReasoningModel  string `toml:"reasoning_model" json:"reasoning_model"`   // Model for spec compilation (thinking)
+	CodegenModel    string `toml:"codegen_model" json:"codegen_model"`       // Model for code generation
+	SupportsThinking bool  `toml:"supports_thinking" json:"supports_thinking"` // Whether model supports thinking/reasoning mode
 }
 
 
@@ -52,6 +63,13 @@ func defaults() *Config {
 		Profile: "fastapi-async",
 		Daemon: DaemonConfig{
 			PythonExecutable: "python3",
+		},
+		Provider: ProviderConfig{
+			Name:             "deepseek",
+			BaseURL:          "https://api.deepseek.com",
+			ReasoningModel:   "",
+			CodegenModel:     "",
+			SupportsThinking: true,
 		},
 	}
 }

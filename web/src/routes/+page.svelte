@@ -194,7 +194,3 @@
 		</div>
 	{/if}
 </div>
-		<ChatView />
-		</div>
-	{/if}
-</div>

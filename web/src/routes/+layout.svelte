@@ -14,11 +14,16 @@
 </script>
 
 <div class="flex h-screen w-screen overflow-hidden">
+	<!-- Skip to content link for accessibility -->
+	<a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:z-[100] focus:top-2 focus:left-2 focus:rounded-lg focus:bg-[var(--brand)] focus:px-4 focus:py-2 focus:text-white focus:text-sm">
+		Skip to main content
+	</a>
+
 	<!-- Sidebar -->
 	<Sidebar />
 
 	<!-- Main content area -->
-	<main class="flex flex-1 flex-col overflow-hidden">
+	<main id="main-content" class="flex flex-1 flex-col overflow-hidden">
 		<DisconnectedBanner />
 		<div class="flex-1 overflow-y-auto">
 			{@render children()}

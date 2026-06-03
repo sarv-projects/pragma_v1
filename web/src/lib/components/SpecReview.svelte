@@ -166,6 +166,7 @@
 		<div class="mb-6">
 			<button
 				onclick={() => (showTechnicalSpec = !showTechnicalSpec)}
+				aria-expanded={showTechnicalSpec}
 				class="flex items-center gap-1.5 text-sm text-[var(--text-muted)] transition-fluid hover:text-[var(--brand-light)]"
 			>
 				<svg class="h-4 w-4 transition-transform {showTechnicalSpec ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">

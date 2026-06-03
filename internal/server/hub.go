@@ -254,6 +254,8 @@ func eventToJSON(ev pipeline.Event) []byte {
 			"budget_left":  e.BudgetLeft,
 			"coverage":     e.Coverage,
 			"project_name": e.ProjectName,
+			"manifest":     json.RawMessage(e.Manifest),
+			"spec":         json.RawMessage(e.Spec),
 		}
 	case pipeline.ErrorEvent:
 		msg = map[string]any{
@@ -287,6 +289,28 @@ func eventToJSON(ev pipeline.Event) []byte {
 			"command": e.Command,
 			"passed":  e.Passed,
 			"output":  e.Output,
+		}
+	case pipeline.RuntimeValidationErrorEvent:
+		msg = map[string]any{
+			"type":    "runtime_validation_error",
+			"message": e.Message,
+			"logs":    e.Logs,
+		}
+	case pipeline.RuntimeValidationPassedEvent:
+		msg = map[string]any{
+			"type": "runtime_validation_passed",
+		}
+	case pipeline.SpecProgressEvent:
+		msg = map[string]any{
+			"type":    "spec_progress",
+			"pass":    e.Pass,
+			"status":  e.Status,
+			"message": e.Message,
+		}
+	case pipeline.QueuedMessageEvent:
+		msg = map[string]any{
+			"type":    "queued_message",
+			"content": e.Content,
 		}
 	default:
 		return nil

@@ -70,7 +70,16 @@ func (s *Server) dispatchAction(raw []byte) {
 
 	switch msg.Action {
 	case "send_message":
-		go s.handleInterviewMessage(msg.Content)
+		// During generation, queue messages for post-generation refinement
+		if s.hasDaemon() && s.service.State().Phase == pipeline.PhaseGenerating {
+			s.service.QueueMessage(msg.Content)
+			s.hub.broadcast <- eventToJSON(pipeline.LogEvent{
+				Level:   "info",
+				Message: "Message queued — will be applied after generation completes.",
+			})
+		} else {
+			go s.handleInterviewMessage(msg.Content)
+		}
 	case "approve_spec":
 		if s.hasDaemon() {
 			s.service.ApproveSpec()
@@ -142,8 +151,13 @@ func (s *Server) handleUpdateManifest(raw []byte) {
 	if payload.Additions != "" {
 		combinedDesc := payload.Additions
 		newProfile := config.SelectProfile(combinedDesc)
-		if newProfile != s.config.Profile {
+		s.mu.RLock()
+		currentProfile := s.config.Profile
+		s.mu.RUnlock()
+		if newProfile != currentProfile {
+			s.mu.Lock()
 			s.config.Profile = newProfile
+			s.mu.Unlock()
 			if saveErr := s.config.Save(config.DefaultPath()); saveErr != nil {
 				log.Printf("server: failed to save profile from additions: %v", saveErr)
 			}
@@ -285,14 +299,14 @@ func (s *Server) handleExtendProjectHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Parse the response (which now includes impact + delta)
-	var responseData map[string]any
-	if err := json.Unmarshal(result, &responseData); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to parse extend_project response")
+	// Validate it's parseable JSON, then write raw bytes directly (avoids double marshal)
+	if !json.Valid(result) {
+		writeError(w, http.StatusInternalServerError, "extend_project returned invalid JSON")
 		return
 	}
-
-	writeJSON(w, http.StatusOK, responseData)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(result)
 }
 
 // handleApplyDelta applies the approved delta spec to the run directory.

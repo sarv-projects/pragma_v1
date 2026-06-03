@@ -25,9 +25,11 @@
 16. [Configuration](#16-configuration)
 17. [Stack Profiles](#17-stack-profiles)
 18. [Image Ingest (Groq Scout Vision)](#18-image-ingest-groq-scout-vision)
-19. [CLI Reference](#19-cli-reference)
-20. [Folder Structure](#20-folder-structure)
-21. [Known Limitations](#21-known-limitations)
+19. [Interactive Refinement](#19-interactive-refinement)
+20. [Runtime Smoke Test Agent](#20-runtime-smoke-test-agent)
+21. [CLI Reference](#21-cli-reference)
+22. [Folder Structure](#22-folder-structure)
+23. [Known Limitations](#23-known-limitations)
 
 ---
 
@@ -46,7 +48,7 @@ Pragma is a terminal-first, browser-served software engineering engine. It accep
 **What it is not:**
 
 - Not a live-preview tool (no browser sandbox runtime)
-- Not an incremental editor (generates fresh codebases, not diffs to existing code)
+- ~~Not an incremental editor~~ Features interactive refinement chat (see §19) for adding features and modifying generated projects
 - Not a deployment platform (generates Docker configs; user deploys)
 
 ---
@@ -138,14 +140,15 @@ The pipeline is a linear state machine. Each phase emits a `phase_changed` WebSo
 | Ideation | `ideation` | AI-driven clarifying interview | User messages |
 | Pre-compile | *(client-side)* | User names project, adds notes | User clicks Proceed |
 | Researching | `researching` | DeepWiki + DDG fetch | Daemon RPC |
-| Compiling spec | `compiling_spec` | 3-pass spec compilation | Daemon RPC (up to 15 min) |
+| Compiling spec | `compiling_spec` | 3-pass spec compilation (with role-specialized prompts) | Daemon RPC (up to 15 min) |
 | Spec review | `spec_review` | Human gate 1 | `approve_spec` action |
 | DAG review | `dag_review` | Human gate 2 | `approve_dag` action |
 | Generating | `generating` | Parallel file generation | Daemon RPCs |
 | Complete | `complete` | All done | — |
+| Refine | `refine` | Interactive chat-to-extend (see §19) | User-initiated from CompleteView |
 | Error | `error` | Fatal failure | — |
 
-Phase transitions are one-way. There is no back-navigation except via "Start New Project" (resets all stores).
+Phase transitions are one-way except for `complete` ↔ `refine`, which users can toggle freely.
 
 ---
 
@@ -213,19 +216,22 @@ Research is best-effort. If it fails entirely, the pipeline continues with empty
 
 The most critical phase. Produces a **Build Contract** — a complete specification of every file, function, class, import, and edge case. Code generation is deterministic given this contract.
 
-### 3-Pass Pipeline
+### 3-Pass Pipeline (Role-Specialized)
 
-**Pass 1 — Draft (thinking ON, medium effort)**
+**Pass 1 — Draft / Lead Architect (thinking ON, medium effort)**
+- Role: "You are the Lead Software Architect" — focuses on architectural completeness, data models, API routes
 - Full architectural reasoning
 - Produces complete spec.json draft
 - Uses reasoning model if available (V4 Pro), otherwise Flash
 
-**Pass 2 — Optimize (thinking OFF)**
+**Pass 2 — Optimize / Security & DB Expert (thinking OFF)**
+- Role: "You are the Security & Database Expert" — reviews for auth gaps, SQL injection risks, missing indexes
 - Reviews Pass 1 output
-- Fixes dependency cycles, missing error handling, interface mismatches
+- Fixes dependency cycles, missing error handling, security gaps, interface mismatches
 - Shared prompt prefix with Pass 1 → DeepSeek cache hit (~98% discount on cached tokens)
 
-**Pass 3 — Finalize (thinking OFF, conditional)**
+**Pass 3 — Finalize / Finalizer (thinking OFF, conditional)**
+- Role: "You are the Finalizer" — consistent naming, valid JSON, resolved depends_on links
 - Only runs if spec validator finds fatal errors after Pass 2
 - Cleanup pass: consistent naming, valid JSON structure
 - Skipped if Pass 2 validates cleanly (saves ~$0.005)
@@ -579,13 +585,17 @@ All messages are newline-delimited JSON.
 | `dag_ready` | `slices`, `est_seconds`, `est_cost` | Execution plan ready |
 | `file_completed` | `path`, `healed`, `failed`, `duration_ms`, `description` | File generated |
 | `budget_updated` | `run_spent`, `remaining` | Cost update |
-| `run_complete` | `output_path`, `file_count`, `healed`, `failed`, `cost`, `coverage`, `project_name` | Done |
+| `run_complete` | `output_path`, `file_count`, `healed`, `failed`, `cost`, `coverage`, `project_name`, `manifest`, `spec` | Done |
 | `security_audit` | `warnings` | Post-gen security findings |
 | `test_run` | `command`, `passed`, `output` | Test suite result |
+| `runtime_validation_error` | `message`, `logs` | Docker smoke test failed |
+| `runtime_validation_passed` | — | Docker smoke test passed |
 | `spec_amendment_proposed` | `file_path`, `reason` | Repeated generation failure suggests spec issue |
 | `extend_project_ready` | `delta_spec`, `run_id` | Delta spec from extend_project |
+| `refine_project` | `manifest`, `spec` | Server signals refine mode available |
 | `error` | `message`, `fatal` | Error (fatal=true means run is dead) |
 | `log` | `level`, `message` | Internal log (debug panel) |
+| `profile_chosen` | `profile` | Stack profile auto-selected |
 | `warning` | `message` | Non-fatal warning (e.g., multiple tabs) |
 
 ### Client → Server Actions
@@ -626,6 +636,8 @@ All endpoints are on `localhost:3777`. POST endpoints reject non-localhost `Orig
 | `/api/resume` | POST | `run_id` | Resume a run (uses 30-min timeout context to prevent resource leaks) |
 | `/api/analyze-image` | POST | — | Analyze uploaded image via Groq Scout vision |
 | `/api/select-profile` | POST | — | Auto-select build profile from description text |
+| `/api/extend-project` | POST | `checkpoint_manifest`, `checkpoint_spec`, `new_requirements` | Impact analysis + delta spec for interactive refinement |
+| `/api/apply-delta` | POST | `run_id`, `delta_spec` | Apply approved delta to project files |
 | `/api/run-project` | POST | `run_id` | Run docker compose up in project directory |
 | `/api/open-folder` | POST | `path` | Open output directory in file manager |
 | `/api/download/{run_id}` | GET | — | Download generated project as ZIP |
@@ -833,7 +845,331 @@ Groq Scout token costs (~$0.11/M input, $0.34/M output) are tracked in the ledge
 
 ---
 
-## 19. CLI Reference
+## 19. Interactive Refinement
+
+After a project is generated, Pragma offers an interactive "chat-to-refine" capability that allows users to request changes, additions, or fixes through natural conversation — turning Pragma from a one-time generator into an ongoing AI pair programmer.
+
+### 19.1 Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    RefineView.svelte                       │
+│              (Chat UI, Impact Display, Approve/Cancel)    │
+└──────────────────────┬───────────────────────────────────┘
+                       │ POST /api/extend-project
+                       │ POST /api/apply-delta
+┌──────────────────────▼───────────────────────────────────┐
+│                    GO SERVER                               │
+│  ┌──────────────────────────────────────────────────┐     │
+│  │  handleExtendProjectHTTP →                             │
+│  │  handleApplyDelta     →                                │
+│  │  handleExtendProject  →  WebSocket integration         │
+│  └──────────────────────────────────────────────────┘     │
+└──────────────────────┬───────────────────────────────────┘
+                       │ JSON-RPC 2.0
+┌──────────────────────▼───────────────────────────────────┐
+│                  PYTHON DAEMON                             │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │  extend_project() → Impact Analyzer + Delta Spec  │    │
+│  │  apply_delta()    → LLM-guided intelligent merge  │    │
+│  └──────────────────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────────┘
+```
+
+### 19.2 Two-Phase Extend Process
+
+**Phase 1 — Impact Analyzer (explicit, blocking):**
+
+Before any code is changed, Pragma analyzes the request's scope:
+
+```
+POST /api/extend-project
+{
+  "checkpoint_manifest": {...},  // original project manifest
+  "checkpoint_spec": {...},      // full spec from the original run
+  "new_requirements": "Add a dark mode toggle to the settings"
+}
+
+Response 200:
+{
+  "impact": {
+    "impact_summary": "Adding a toggle that switches between light and dark themes across all pages",
+    "affected_files": ["frontend/src/Settings.tsx", "frontend/src/App.tsx"],
+    "new_files": ["frontend/src/DarkModeToggle.tsx", "frontend/src/theme.css"],
+    "risk_level": "medium",
+    "risk_reasons": ["Existing CSS uses hardcoded colors that need to be replaced with CSS variables"]
+  },
+  "delta": {
+    "files": [
+      {"path": "frontend/src/DarkModeToggle.tsx", "role": "component", "depends_on": [...]}
+    ],
+    "dependencies": ["react-dark-mode-toggle@3.5.0"]
+  }
+}
+```
+
+The **impact** object is presented to the user in plain English. Risk levels: `low` (🟢), `medium` (🟡), `high` (🔴). The user must explicitly approve before any changes are applied.
+
+**Phase 2 — Delta Application (user-approved):**
+
+```
+POST /api/apply-delta
+{
+  "run_id": "run-abc123",
+  "delta_spec": { "files": [...] }
+}
+
+Response 200:
+{
+  "success": true,
+  "updated_spec": {...}
+}
+```
+
+### 19.3 Intelligent Merging (apply_delta RPC)
+
+The `apply_delta` RPC (`daemon/pragma_daemon/methods.py`) performs LLM-guided intelligent merging rather than simple file writes:
+
+- **New files**: Generated via `generate_file()` — full contract-based codegen
+- **Existing files**: The LLM receives the current file content plus the delta contract. It produces a merged version that preserves all existing functionality while adding the requested changes. This prevents overwriting customizations the user may have made
+- **Path traversal protection**: All file paths are validated to stay within the output directory
+- **Error accumulation**: Individual file failures don't block other files; errors are collected and reported
+
+**Fallback path (Go):** If the `apply_delta` RPC is unavailable (old daemon), the Go server falls back to writing files directly from the delta spec, with full path traversal validation.
+
+### 19.4 Frontend (RefineView.svelte)
+
+The refine UI is a chat interface accessible via the "Refine This Project" button on `CompleteView`. Features:
+
+- **Conversation view**: Messages from both user and Pragma with role-labeled bubbles
+- **Impact card**: When the impact analyzer returns, it's shown as a structured card with affected files, new files, risk level, and risk reasons — all in plain English
+- **Approve/Cancel**: Two explicit buttons; user must approve before code changes
+- **Loading states**: Both analysis and application phases show spinners with "Analyzing impact..." / "Applying changes..." text
+- **XSS protection**: User and AI content is sanitized (`sanitizeHtml()`) before rendering — strips `<script>`, `<img>`, `<iframe>`, `on*` handlers, `javascript:` URIs
+- **Accessibility**: `aria-live="polite"` on conversation area, `aria-label` on buttons, `role="log"` on conversation history
+- **Store integration**: `checkpointManifest` and `checkpointSpec` stores are auto-populated from the `run_complete` WebSocket event (which now includes `manifest` and `spec` fields)
+
+### 19.5 WebSocket Integration
+
+The `extend_project` WebSocket action (backward-compatible) uses the same two-phase RPC. Results are broadcast as:
+
+```json
+{
+  "type": "extend_project_ready",
+  "delta_spec": { "impact": {...}, "delta": {...} },
+  "run_id": "run-abc123"
+}
+```
+
+### 19.6 Phase State
+
+A new `'refine'` phase is added to the pipeline state machine:
+
+| Phase | Wire name | Description |
+|-------|-----------|-------------|
+| Refine | `refine` | User is chatting with Pragma to extend/modify their project |
+
+The refine phase is NOT linear — users can toggle between `complete` and `refine` phases freely.
+
+---
+
+## 20. Runtime Smoke Test Agent
+
+After code generation, Pragma can verify that the generated application actually starts — catching runtime errors (missing environment variables, port conflicts, database connection failures) that static analysis cannot detect.
+
+### 20.1 Architecture
+
+```
+finishRun() in pipeline/service.go
+        |
+        v
+Check for docker-compose.yml existence
+        |
+        v
+docker compose up -d --build  (3 min timeout)
+        |
+    ┌───┴───┐
+    │       │
+ Success   Failed
+    │       │
+    │       └──→ Emit warning, run continues
+    │
+    v
+Poll container states every 3s (up to 30s)
+    |
+    ├── All containers reach "Up" state
+    │       │
+    │       └──→ Emit RuntimeValidationPassedEvent
+    │
+    └── Timeout (container didn't start in 30s)
+            │
+            └──→ Fetch docker compose logs (last 100 lines)
+                 Emit RuntimeValidationErrorEvent with logs
+                 |
+                 v
+           docker compose down  (cleanup)
+```
+
+### 20.2 Implementation Details
+
+**Location:** `internal/pipeline/service.go`, within `finishRun()`, after test execution and before the final `RunCompleteEvent`.
+
+**Container state detection:** Uses `docker compose ps --format json` and parses the JSON output to check each service's `Status` field. Only `"Up"` (or strings starting with `"Up"`) are considered healthy. This replaces the earlier fragile string-matching approach that could false-positive on container names containing "exit" or "dead".
+
+**Timeout chain:**
+| Operation | Timeout | Reason |
+|-----------|---------|--------|
+| `docker compose up --build` | 3 minutes | First build may be slow (downloading images) |
+| Healthcheck polling | 30 seconds | After successful up, wait for app to start |
+| `docker compose logs` | Default (30s) | Quick log fetch |
+| `docker compose down` | Default (30s) | Cleanup |
+
+**Non-blocking:** The smoke test is non-fatal. If Docker is not installed, `docker compose up` fails with a logged warning and the run completes normally.
+
+**Cleanup:** After the smoke test (whether passed or failed), `docker compose down` removes containers and networks. Named volumes persist (by design — the safer default).
+
+### 20.3 Events
+
+**RuntimeValidationPassedEvent:**
+```go
+type RuntimeValidationPassedEvent struct{}
+```
+
+**RuntimeValidationErrorEvent:**
+```go
+type RuntimeValidationErrorEvent struct {
+    Message string  // "Application failed to start within 30 seconds"
+    Logs    string  // Last 100 lines of docker compose logs (truncated to 2000 chars)
+}
+```
+
+### 20.4 Frontend Display
+
+The `CompleteView` component checks the `runtimeValidationError` store after a run completes:
+- **No event or passed**: No display (success is silent)
+- **Error**: Shows a yellow warning card with "Quick health check found issues", the error message, and a collapsible `<details>` section showing the Docker logs
+
+### 20.5 Self-Healing Integration
+
+The `fix_runtime_error` RPC (`daemon/pragma_daemon/methods.py`) is available for automated healing from runtime errors:
+
+```
+RPC: fix_runtime_error(error_logs, file_contract, current_content, profile) -> dict
+
+Returns:
+{
+  "content": "<fixed source code>",
+  "usage": { "input_tokens": ..., "output_tokens": ... }
+}
+```
+
+The healing agent:
+1. Receives the runtime error logs, the original file contract, and the generated file content
+2. Identifies the root cause (missing import, syntax error, wrong variable name, missing env var)
+3. Outputs ONLY the corrected source code (no markdown fences, no explanation)
+4. Prefers Groq (fast healing, 1,000 t/s) but falls back to DeepSeek
+
+This is currently available as a standalone RPC. Full automated integration (auto-heal loop on smoke test failure) is planned for a future release.
+
+---
+
+## 21. Role-Specialized Spec Compilation
+
+The 3-pass spec compiler has been enhanced with role-specialized system prompts that emulate a virtual "software company" structure — similar to MetaGPT and ChatDev, but achieved entirely through prompt engineering without complex multi-agent frameworks.
+
+### 21.1 Pass Roles
+
+**Pass 1 — Lead Architect (thinking ON, medium effort):**
+```
+ROLE: You are the Lead Software Architect.
+Focus on: correct data models, comprehensive API routes,
+proper dependency injection, and logical file structure.
+Do not worry about minor formatting yet; focus on architectural completeness.
+```
+
+**Pass 2 — Security & Database Expert (thinking OFF):**
+```
+ROLE: You are the Security & Database Expert.
+Focus exclusively on: missing authentication/authorization checks,
+SQL injection risks, missing database indexes, improper error handling,
+and ensuring all local imports resolve.
+Fix any architectural gaps you find.
+```
+
+**Pass 3 — Finalizer (thinking OFF, conditional):**
+```
+ROLE: You are the Finalizer.
+Focus on: consistent naming conventions, valid JSON structure,
+resolving all depends_on links, and removing any redundancy.
+Output ONLY the final, valid JSON object.
+```
+
+### 21.2 Implementation
+
+- **Location:** `daemon/pragma_daemon/spec_compiler.py`, `_build_pass1_messages()`, `_build_pass2_messages()`, `_build_pass3_messages()`
+- **Backward compatible:** The core 3-pass pipeline logic is unchanged. Only the system messages are enhanced with role prefixes
+- **Cost impact:** Same 3 LLM calls; the role prefix adds ~50 tokens per pass (~$0.000007)
+- **Chained compilation:** Large projects (>18 endpoints+models) compile in domain modules (core, models, services, routes, tests) — each module receives the role-appropriate system prompt
+
+---
+
+## 22. Golden Template System
+
+To prevent structural hallucinations and ensure every generated project matches framework best practices, Pragma's stack profiles now include verified "golden template" snippets.
+
+### 22.1 Template Types
+
+Each profile can optionally include a `[templates]` section with minimal, verified, working examples:
+
+| Template Key | Purpose |
+|-------------|---------|
+| `route` | Minimal FastAPI route with Depends(), HTTPException, and proper schema usage |
+| `model` | Correct SQLAlchemy 2.0 model using Mapped[] type annotations (never Column()) |
+| `docker_compose` | Verified docker-compose.yml matching the profile's database and framework |
+
+### 22.2 Template Enforcement
+
+The golden templates are injected into the spec compiler's system prompt as part of the framework patterns block. The compiler is instructed to use these snippets as the **exact structural blueprint** — the generated code must conform to the same patterns.
+
+### 22.3 Example: FastAPI Async Golden Templates
+
+**Route template** (from `fastapi-async.toml`):
+```python
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.database import get_db
+from app.schemas.item import ItemCreate, ItemResponse
+from app.services.item_service import create_item
+
+router = APIRouter(prefix="/items", tags=["items"])
+
+@router.post("/", response_model=ItemResponse, status_code=status.HTTP_201_CREATED)
+async def create_item_endpoint(item: ItemCreate, db: AsyncSession = Depends(get_db)):
+    try:
+        return await create_item(db, item)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+```
+
+**Model template** (from `fastapi-async.toml`):
+```python
+from sqlalchemy import String
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from typing import Optional
+
+class Base(DeclarativeBase):
+    pass
+
+class Item(Base):
+    __tablename__ = "items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[Optional[datetime]] = mapped_column(default=datetime.utcnow)
+```
+
+---
+
+## 23. CLI Reference
 
 ```
 pragma [flags] [command]
@@ -928,8 +1264,22 @@ pragma/
 │   │   └── lib/
 │   │       ├── stores/
 │   │       │   ├── ws.ts    # WebSocket store, all pipeline state
-│   │       │   └── settings.ts # Key status, settings
-│   │       └── components/  # UI components (one per phase/feature)
+│   │       │   └── refine.ts     # Refinement chat stores
+│   │       ├── components/  # UI components (one per phase/feature)
+│   │       │   ├── ChatView.svelte
+│   │       │   ├── CompleteView.svelte
+│   │       │   ├── RefineView.svelte     # Interactive refinement chat (see §19)
+│   │       │   ├── GeneratingView.svelte
+│   │       │   ├── SpecReview.svelte
+│   │       │   ├── DagApproval.svelte
+│   │       │   ├── PreCompileView.svelte
+│   │       │   ├── WorkingView.svelte
+│   │       │   ├── ProjectInput.svelte
+│   │       │   ├── SetupGuide.svelte
+│   │       │   ├── Settings.svelte
+│   │       │   ├── Sidebar.svelte
+│   │       │   ├── DisconnectedBanner.svelte
+│   │       │   └── StatusBar.svelte
 │   └── embed.go             # go:embed directive for web/build/
 │
 ├── spec.md                  # This document
@@ -943,7 +1293,7 @@ pragma/
 
 ## 21. Known Limitations
 
-1. **No incremental editing.** Pragma generates fresh codebases. It cannot modify an existing project's files (only `extend_project` which generates a delta spec for new files).
+1. ~~No incremental editing.~~ Added in v5.2 — interactive refinement chat (see §19) allows adding features and modifying existing projects through natural conversation.
 
 2. **No live preview.** There is no browser sandbox runtime. The user must run the generated code themselves (`docker compose up`).
 
@@ -960,3 +1310,7 @@ pragma/
 8. **pragma publish** creates a local git repo and prints GitHub push instructions. It does not push automatically (no GitHub OAuth).
 
 9. **Test execution requires Docker or local toolchain.** The test runner executes `spec.setup.test` in the output directory. If the required runtime (Python, Node, Go) is not installed, tests will fail.
+
+10. **Docker smoke test healthcheck uses polling.** The smoke test polls container states every 3 seconds for up to 30 seconds. Applications with very slow startup (some Next.js SSR pages may take 60s+) may be incorrectly flagged as failed. The timeout is not yet configurable per profile.
+
+11. **Refinement requires original checkpoint data.** The `checkpointManifest` and `checkpointSpec` stores are populated from the `run_complete` WebSocket event. If the browser was closed before the run completed, these stores will be empty and the Refine feature will not work for that run.

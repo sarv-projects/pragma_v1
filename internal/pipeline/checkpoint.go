@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -28,6 +29,11 @@ func SaveCheckpoint(state RunState, dir string) error {
 	chkPath := filepath.Join(runDir, "checkpoint.json")
 	tmpPath := chkPath + ".tmp"
 
+	// Create backup of existing checkpoint before overwriting
+	if existing, err := os.ReadFile(chkPath); err == nil {
+		_ = os.WriteFile(chkPath+".bak", existing, 0644)
+	}
+
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
 		return err
 	}
@@ -43,8 +49,26 @@ func LoadCheckpoint(runID string, dir string) (*RunState, error) {
 
 	var state RunState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, err
+		// Try to load backup
+		bakPath := chkPath + ".bak"
+		if bakData, bakErr := os.ReadFile(bakPath); bakErr == nil {
+			if bakErr := json.Unmarshal(bakData, &state); bakErr == nil {
+				// Backup loaded successfully — restore it
+				_ = os.WriteFile(chkPath, bakData, 0644)
+				return &state, nil
+			}
+		}
+		return nil, fmt.Errorf("checkpoint corrupted and no valid backup found: %w", err)
 	}
+
+	// Validate required fields
+	if state.RunID == "" {
+		return nil, fmt.Errorf("checkpoint missing RunID")
+	}
+	if state.Phase == 0 {
+		return nil, fmt.Errorf("checkpoint missing Phase")
+	}
+
 	return &state, nil
 }
 

@@ -71,8 +71,9 @@ type RunCompleteEvent struct {
 	Failed      int
 	TotalCost   float64
 	BudgetLeft  float64
-
 	Coverage    int
+	Manifest    json.RawMessage
+	Spec        json.RawMessage
 }
 
 func (PhaseChangedEvent) eventTag()     {}
@@ -117,3 +118,19 @@ func (RuntimeValidationErrorEvent) eventTag() {}
 type RuntimeValidationPassedEvent struct{}
 
 func (RuntimeValidationPassedEvent) eventTag() {}
+
+// SpecProgressEvent is emitted during spec compilation to show partial progress.
+type SpecProgressEvent struct {
+	Pass    int    // 1, 2, or 3
+	Status  string // "started", "completed", "error"
+	Message string // Human-readable status
+}
+
+func (SpecProgressEvent) eventTag() {}
+
+// QueuedMessageEvent notifies the frontend that a message was queued during generation.
+type QueuedMessageEvent struct {
+	Content string
+}
+
+func (QueuedMessageEvent) eventTag() {}

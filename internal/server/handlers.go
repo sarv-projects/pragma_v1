@@ -99,7 +99,7 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 		defer cancel()
 		if err := s.service.Resume(ctx, *state); err != nil {
 			s.hub.broadcast <- eventToJSON(pipeline.ErrorEvent{Err: err, Fatal: true})
@@ -302,6 +302,12 @@ func (s *Server) handleReadme(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Security: validate runID doesn't contain path traversal characters
+	if strings.Contains(runID, "..") || strings.Contains(runID, "/") || strings.Contains(runID, "\\") {
+		writeError(w, http.StatusBadRequest, "invalid run_id")
+		return
+	}
+
 	readmePath := filepath.Join(s.config.Output.Directory, runID, "README.md")
 	data, err := os.ReadFile(readmePath)
 	if err != nil {
@@ -318,12 +324,15 @@ func (s *Server) handleReadme(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req struct {
-		Provider   string `json:"provider"`
-		APIKey     string `json:"api_key"`
-		GroqAPIKey string `json:"groq_api_key"`
-		BaseURL    string `json:"base_url"`
-		Mode       string `json:"mode"`
-		Profile    string `json:"profile"`
+		Provider         string `json:"provider"`
+		APIKey           string `json:"api_key"`
+		GroqAPIKey       string `json:"groq_api_key"`
+		BaseURL          string `json:"base_url"`
+		Mode             string `json:"mode"`
+		Profile          string `json:"profile"`
+		ReasoningModel   string `json:"reasoning_model"`
+		CodegenModel     string `json:"codegen_model"`
+		SupportsThinking *bool  `json:"supports_thinking"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
@@ -368,7 +377,9 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Update mode in config if provided
 	if req.Mode != "" {
+		s.mu.Lock()
 		s.config.Mode = req.Mode
+		s.mu.Unlock()
 		if err := s.config.Save(config.DefaultPath()); err != nil {
 			log.Printf("server: failed to save config: %v", err)
 		}
@@ -376,9 +387,33 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 
 	// Update profile in config if provided
 	if req.Profile != "" {
+		s.mu.Lock()
 		s.config.Profile = req.Profile
+		s.mu.Unlock()
 		if err := s.config.Save(config.DefaultPath()); err != nil {
 			log.Printf("server: failed to save profile config: %v", err)
+		}
+	}
+
+	// Update provider config if provider name or base URL is provided
+	if req.Provider != "" && req.Provider != "deepseek" {
+		s.mu.Lock()
+		s.config.Provider.Name = req.Provider
+		if req.BaseURL != "" {
+			s.config.Provider.BaseURL = req.BaseURL
+		}
+		if req.ReasoningModel != "" {
+			s.config.Provider.ReasoningModel = req.ReasoningModel
+		}
+		if req.CodegenModel != "" {
+			s.config.Provider.CodegenModel = req.CodegenModel
+		}
+		if req.SupportsThinking != nil {
+			s.config.Provider.SupportsThinking = *req.SupportsThinking
+		}
+		s.mu.Unlock()
+		if err := s.config.Save(config.DefaultPath()); err != nil {
+			log.Printf("server: failed to save provider config: %v", err)
 		}
 	}
 
@@ -635,7 +670,9 @@ func (s *Server) handleSelectProfile(w http.ResponseWriter, r *http.Request) {
 	profile := config.SelectProfile(req.Text)
 
 	// Persist to config so it's used when the pipeline starts
+	s.mu.Lock()
 	s.config.Profile = profile
+	s.mu.Unlock()
 	if err := s.config.Save(config.DefaultPath()); err != nil {
 		log.Printf("server: failed to save selected profile: %v", err)
 	}
@@ -778,6 +815,12 @@ func (s *Server) handleRunProject(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.RunID == "" {
 		writeError(w, http.StatusBadRequest, "run_id is required")
+		return
+	}
+
+	// Security: validate runID doesn't contain path traversal characters
+	if strings.Contains(req.RunID, "..") || strings.Contains(req.RunID, "/") || strings.Contains(req.RunID, "\\") {
+		writeError(w, http.StatusBadRequest, "invalid run_id")
 		return
 	}
 

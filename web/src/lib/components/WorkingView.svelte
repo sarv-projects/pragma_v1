@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { phase, elapsed } from '$lib/stores/ws';
+	import { phase, elapsed, specProgress } from '$lib/stores/ws';
 
 	function phaseInfo(p: string): { title: string; subtitle: string } {
 		if (p === 'researching') return {
@@ -28,7 +28,13 @@
 		</div>
 
 		<h2 class="mb-2 text-xl font-semibold text-[var(--text-primary)]">{info.title}</h2>
-		<p class="mb-4 text-sm text-[var(--text-muted)]">{info.subtitle}</p>
+
+		{#if $specProgress && $phase === 'compiling_spec'}
+			<p class="mb-2 text-sm text-[var(--accent)]">{$specProgress.message}</p>
+		{:else}
+			<p class="mb-4 text-sm text-[var(--text-muted)]">{info.subtitle}</p>
+		{/if}
+
 		<p class="text-xs text-[var(--text-dim)]">Elapsed: {formatElapsed($elapsed)}</p>
 	</div>
 </div>

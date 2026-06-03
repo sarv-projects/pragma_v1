@@ -154,7 +154,7 @@ class RPCMethods:
             try:
                 manifest = json.loads(json_part)
             except json.JSONDecodeError:
-                extracted = _extract_json_braces(json_part)
+                extracted = _extract_json(json_part)
                 if extracted:
                     try:
                         manifest = json.loads(extracted)
@@ -549,7 +549,7 @@ Output ONLY the Markdown content.
             if text.startswith("["):
                 warnings = json.loads(text)
             else:
-                extracted = _extract_json_braces(text, '[', ']')
+                extracted = _extract_json(text)
                 if extracted:
                     warnings = json.loads(extracted)
                 else:
@@ -823,6 +823,122 @@ Output ONLY the Markdown content.
         except Exception as e:
             logger.warning(f"fix_runtime_error failed: {e}")
             raise ValueError(f"Failed to fix runtime error: {e}") from e
+
+    async def apply_delta(
+        self,
+        run_id: str,
+        output_dir: str,
+        delta_spec: dict,
+    ) -> dict:
+        """Apply a delta spec to existing files via LLM-guided intelligent merging.
+
+        Unlike the Go fallback (simple file write), this RPC uses the LLM
+        to merge changes intelligently: new files are created, existing files
+        receive surgical edits that preserve surrounding code.
+
+        Returns a dict with a list of files that were added, modified, or
+        deleted, plus summary stats.
+        """
+        logger.info(f"Applying delta spec to run {run_id} in {output_dir}")
+        base = Path(output_dir).resolve()
+        results = {"added": [], "modified": [], "unchanged": [], "errors": []}
+
+        delta_files = delta_spec.get("files", []) if isinstance(delta_spec, dict) else []
+
+        for file_entry in delta_files:
+            if not isinstance(file_entry, dict):
+                continue
+            fpath = file_entry.get("path", "")
+            if not fpath:
+                continue
+            # Security: prevent path traversal
+            full_path = (base / fpath).resolve()
+            if not str(full_path).startswith(str(base)):
+                results["errors"].append(f"Blocked path traversal: {fpath}")
+                continue
+
+            full_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if not full_path.exists():
+                # New file — generate via LLM using the file contract
+                try:
+                    gen_prompt = (
+                        f"Generate a complete source file for a project.\n\n"
+                        f"FILE PATH: {fpath}\n"
+                        f"FILE ROLE: {file_entry.get('role', 'module')}\n"
+                        f"DEPENDS ON: {', '.join(file_entry.get('depends_on', []))}\n"
+                        f"PUBLIC API: {', '.join(file_entry.get('public_api', []))}\n\n"
+                        f"Output ONLY the source code. No markdown fences, no explanations."
+                    )
+                    if self.groq:
+                        resp = await self.groq.heal_code(
+                            [{"role": "user", "content": gen_prompt}],
+                            max_tokens=8192,
+                        )
+                        content = resp.content
+                    else:
+                        ds_resp = await self.ds.chat(
+                            [{"role": "user", "content": gen_prompt}],
+                            thinking=False,
+                            max_tokens=8192,
+                        )
+                        content = ds_resp.content
+                    content = strip_code_fences(content.strip())
+                    full_path.write_text(content, encoding="utf-8")
+                    results["added"].append(fpath)
+                except Exception as e:
+                    logger.warning(f"Failed to generate new file {fpath}: {e}")
+                    results["errors"].append(f"Failed to generate {fpath}: {e}")
+                continue
+
+            # Existing file — perform intelligent merge
+            existing_content = full_path.read_text(encoding="utf-8")
+            contract_summary = json.dumps({
+                "role": file_entry.get("role"),
+                "depends_on": file_entry.get("depends_on"),
+                "public_api": file_entry.get("public_api"),
+            }, indent=2)
+
+            merge_prompt = (
+                "You are an expert code merger. You need to update an existing file "
+                "to fulfill a new contract while preserving all existing functionality.\n\n"
+                f"EXISTING FILE ({fpath}):\n```\n{existing_content[:8000]}\n```\n\n"
+                f"DELTA CONTRACT:\n```json\n{contract_summary}\n```\n\n"
+                "Output ONLY the complete merged source code. "
+                "Do NOT include markdown fences or explanations. "
+                "Preserve all existing code that is not explicitly replaced by the delta. "
+                "Add new imports at the top, new functions at appropriate locations."
+            )
+
+            try:
+                if self.groq:
+                    resp = await self.groq.heal_code(
+                        [{"role": "user", "content": merge_prompt}],
+                        max_tokens=8192,
+                    )
+                    merged = resp.content
+                else:
+                    ds_resp = await self.ds.chat(
+                        [{"role": "user", "content": merge_prompt}],
+                        thinking=False,
+                        max_tokens=8192,
+                    )
+                    merged = ds_resp.content
+
+                merged = strip_code_fences(merged)
+                full_path.write_text(merged, encoding="utf-8")
+                results["modified"].append(fpath)
+            except Exception as e:
+                logger.warning(f"Failed to merge {fpath}: {e}")
+                results["errors"].append(f"Failed to merge {fpath}: {e}")
+                continue
+
+        results["summary"] = (
+            f"Added {len(results['added'])}, modified {len(results['modified'])}, "
+            f"{len(results['unchanged'])} unchanged, {len(results['errors'])} errors"
+        )
+        logger.info(f"apply_delta complete: {results['summary']}")
+        return dict(results)
 
     async def analyze_image(
         self,

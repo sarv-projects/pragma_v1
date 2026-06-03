@@ -82,6 +82,9 @@ export const selectedProfile = writable<string>("fastapi-async");
 /** Tracks the result of the runtime smoke test (null = not run or passed). */
 export const runtimeValidationError = writable<{ message: string; logs: string } | null>(null);
 
+/** Tracks spec compilation progress (pass number, status, message). */
+export const specProgress = writable<{ pass: number; status: string; message: string } | null>(null);
+
 // Derived
 export const progress = derived(
   [filesCompleted, totalFiles],
@@ -242,6 +245,9 @@ function dispatch(msg: any) {
 
     case "run_complete":
       runResult.set(msg as RunComplete);
+      // Populate refinement stores from the actual checkpoint data
+      if (msg.manifest) checkpointManifest.set(msg.manifest);
+      if (msg.spec) checkpointSpec.set(msg.spec);
       phase.set("complete");
       stopElapsedTimer();
       loadRecentRuns();
@@ -278,6 +284,15 @@ function dispatch(msg: any) {
     case "runtime_validation_passed":
       console.log("[Pragma] Runtime smoke test passed");
       runtimeValidationError.set(null);
+      break;
+
+    case "spec_progress":
+      specProgress.set({ pass: msg.pass, status: msg.status, message: msg.message });
+      break;
+
+    case "queued_message":
+      // A message was queued during generation — will be applied post-gen
+      console.log("[Pragma] Message queued for post-generation refinement");
       break;
 
     case "refine_project":
@@ -486,5 +501,7 @@ export function resetStores() {
   reconnectAttempts.set(0);
   reconnectFailed.set(false);
   selectedProfile.set("fastapi-async");
+  specProgress.set(null);
+  runtimeValidationError.set(null);
   lastAction = null;
 }

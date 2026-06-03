@@ -20,16 +20,47 @@
 	let collapsed = $state(false);
 	let showSettings = $state(false);
 	let showHelp = $state(false);
+	let mobileOpen = $state(false);
 
 	function newProject() {
 		resetStores();
-		// Navigate to home/chat
+		mobileOpen = false;
 		window.location.hash = '';
+	}
+
+	function toggleSidebar() {
+		if (window.innerWidth < 768) {
+			mobileOpen = !mobileOpen;
+		} else {
+			collapsed = !collapsed;
+		}
+	}
+
+	function closeMobile() {
+		if (window.innerWidth < 768) {
+			mobileOpen = false;
+		}
 	}
 </script>
 
+<!-- Mobile hamburger button -->
+<button
+	onclick={toggleSidebar}
+	aria-label="Toggle navigation"
+	class="fixed top-3 left-3 z-50 rounded-lg bg-[var(--bg-raised)] border border-[var(--border)] p-2 text-[var(--text-muted)] md:hidden shadow-lg"
+>
+	<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+		<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+	</svg>
+</button>
+
+<!-- Mobile overlay -->
+{#if mobileOpen}
+	<div class="fixed inset-0 z-40 bg-black/50 md:hidden" onclick={closeMobile} role="presentation"></div>
+{/if}
+
 <aside
-	class="flex flex-col border-r border-[var(--border)] bg-[var(--bg-raised)] transition-fluid {collapsed ? 'w-16' : 'w-64'}"
+	class="flex flex-col border-r border-[var(--border)] bg-[var(--bg-raised)] transition-fluid {collapsed ? 'w-16' : 'w-64'} fixed md:relative z-40 h-full {mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}"
 >
 	<!-- Logo -->
 	<div class="flex items-center gap-2 px-4 py-5">
@@ -60,7 +91,7 @@
 					{#each $recentRuns as run (run.run_id)}
 						<div class="group relative flex w-full items-center rounded-lg transition-fluid hover:bg-[var(--bg-hover)]">
 							<button 
-								onclick={() => resumeRun(run.run_id)}
+								onclick={() => { resumeRun(run.run_id); closeMobile(); }}
 								class="flex-1 text-left pl-3 pr-10 py-2 text-sm text-[var(--text-muted)] cursor-pointer truncate"
 								title={run.project_name || run.run_id}
 							>
@@ -96,7 +127,7 @@
 		{/if}
 		{#if !$guideActive}
 			<button
-				onclick={() => (showSettings = true)}
+				onclick={() => { showSettings = true; closeMobile(); }}
 				aria-label="Settings"
 				class="mt-2 flex w-full items-center gap-2 rounded-md p-1.5 text-sm text-[var(--text-muted)] transition-fluid hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]"
 			>

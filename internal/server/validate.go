@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+// allowedBaseURLs is the set of known-safe provider base URLs.
+// Custom/unknown URLs are blocked to prevent SSRF attacks.
+var allowedBaseURLs = map[string]bool{
+	"https://api.deepseek.com":            true,
+	"https://api.openai.com/v1":           true,
+	"https://api.groq.com/openai/v1":      true,
+	"https://api.together.xyz/v1":         true,
+	"https://openrouter.ai/api/v1":        true,
+	"https://api.anthropic.com/v1":        true,
+	"http://localhost:11434":               true, // Ollama default
+	"http://127.0.0.1:11434":              true, // Ollama default
+}
+
 // ValidateAPIKey makes a request to the provider's models endpoint to verify
 // the key is valid. Returns nil on success, a descriptive error otherwise.
 func ValidateAPIKey(baseURL, apiKey, provider string) ([]string, error) {
@@ -18,6 +31,16 @@ func ValidateAPIKey(baseURL, apiKey, provider string) ([]string, error) {
 
 	// Normalize URL
 	baseURL = strings.TrimRight(baseURL, "/")
+
+	// SSRF protection: only allow known provider URLs or localhost for custom/Ollama
+	if !allowedBaseURLs[baseURL] {
+		// Allow localhost URLs for custom/Ollama providers
+		if strings.HasPrefix(baseURL, "http://localhost:") || strings.HasPrefix(baseURL, "http://127.0.0.1:") {
+			// Allowed — local provider
+		} else {
+			return nil, fmt.Errorf("base URL %q is not in the allowed provider list. Use a known provider or localhost", baseURL)
+		}
+	}
 
 	client := &http.Client{Timeout: 15 * time.Second}
 

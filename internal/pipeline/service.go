@@ -49,6 +49,14 @@ type Service struct {
 	Headless           bool
 	lastPhaseCostMu    sync.Mutex
 	lastPhaseRecorded  float64
+
+	// QueuedMessages collects user messages sent during generation.
+	// After generation completes, these are auto-applied as refinements.
+	QueuedMessages   []string
+	queueMu          sync.Mutex
+
+	// runLock prevents concurrent runs. Only one run can be active at a time.
+	runLock          sync.Mutex
 }
 
 func NewService(c *daemon.Client, o *budget.Oracle, cfg *config.Config, evt chan<- Event, ledger *budget.Ledger) *Service {
@@ -95,8 +103,37 @@ func (s *Service) ApproveDAG() {
 	}
 }
 
+// QueueMessage adds a user message to the queue for post-generation refinement.
+func (s *Service) QueueMessage(msg string) {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	s.QueuedMessages = append(s.QueuedMessages, msg)
+}
+
+// DrainQueuedMessages returns all queued messages and clears the queue.
+func (s *Service) DrainQueuedMessages() []string {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	msgs := s.QueuedMessages
+	s.QueuedMessages = nil
+	return msgs
+}
+
+// HasQueuedMessages reports whether there are queued messages.
+func (s *Service) HasQueuedMessages() bool {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	return len(s.QueuedMessages) > 0
+}
+
 
 func (s *Service) StartRun(ctx context.Context, manifest string, profileName string) error {
+	// Prevent concurrent runs
+	if !s.runLock.TryLock() {
+		return fmt.Errorf("a run is already in progress. Please wait for it to complete or abort it first")
+	}
+	defer s.runLock.Unlock()
+
 	if s.Headless {
 		var m map[string]any
 		if err := json.Unmarshal([]byte(manifest), &m); err != nil {
@@ -108,8 +145,9 @@ func (s *Service) StartRun(ctx context.Context, manifest string, profileName str
 	}
 
 	s.stateMu.Lock()
+	// Use nanosecond timestamp + random suffix to prevent RunID collisions
 	s.state = RunState{
-		RunID:       fmt.Sprintf("run-%d", time.Now().Unix()),
+		RunID:       fmt.Sprintf("run-%d-%04x", time.Now().UnixNano(), time.Now().UnixNano()%0xFFFF),
 		Phase:       PhaseIdeation,
 		ProjectName: deriveProjectName(manifest),
 		ProfileName: profileName,
@@ -154,6 +192,7 @@ func (s *Service) StartRun(ctx context.Context, manifest string, profileName str
 
 	// 2. Compile Spec
 	s.emit(PhaseChangedEvent{From: PhaseResearching, To: PhaseCompilingSpec})
+	s.emit(SpecProgressEvent{Pass: 1, Status: "started", Message: "Drafting spec (Pass 1/3 — Lead Architect)..."})
 	s.stateMu.Lock()
 	s.state.Phase = PhaseCompilingSpec
 	specArgs := map[string]any{
@@ -170,9 +209,11 @@ func (s *Service) StartRun(ctx context.Context, manifest string, profileName str
 	specRes, err := s.client.Call(sCtx, "compile_spec", specArgs)
 	sCancel()
 	if err != nil {
+		s.emit(SpecProgressEvent{Pass: 0, Status: "error", Message: "Spec compilation failed: " + err.Error()})
 		s.emit(ErrorEvent{Err: fmt.Errorf("spec compilation failed: %w", err), Fatal: true})
 		return fmt.Errorf("spec compilation failed: %w", err)
 	}
+	s.emit(SpecProgressEvent{Pass: 3, Status: "completed", Message: "Spec compiled successfully"})
 	s.stateMu.Lock()
 	s.state.Spec = specRes
 	s.stateMu.Unlock()
@@ -302,7 +343,17 @@ func (s *Service) runGeneration(
 
 				// Budget pre-flight with a real per-file estimate (D2).
 				if !s.oracle.CanSpend(fNode.EstTokens) {
-					s.logEvent("warn", fmt.Sprintf("Budget would be exceeded; skipping %s", fNode.Path))
+					st := s.oracle.Status()
+					needed := float64(fNode.EstTokens) * 3.0 * 0.14 / 1_000_000.0
+					s.logEvent("warn", fmt.Sprintf(
+						"Budget exceeded for %s. Spent: $%.4f / $%.2f cap. Need ~$%.4f more. "+
+							"Increase your per-run budget in Settings or use --budget flag.",
+						fNode.Path, st.RunSpent, st.PerRunCap, needed,
+					))
+					s.emit(ErrorEvent{
+						Err:   fmt.Errorf("budget exceeded at %s. Spent $%.4f of $%.2f cap. Increase budget in Settings to continue.", fNode.Path, st.RunSpent, st.PerRunCap),
+						Fatal: false,
+					})
 					s.stateMu.Lock()
 					s.state.FilesFailed = append(s.state.FilesFailed, fNode.Path)
 					s.stateMu.Unlock()
@@ -706,8 +757,9 @@ func (s *Service) finishRun(ctx context.Context, runDir string, healedCount, tot
 		Failed:      failedCount,
 		TotalCost:   st.RunSpent,
 		BudgetLeft:  st.LifetimeCap - st.TotalSpent,
-
 		Coverage:    coveragePct,
+		Manifest:    s.state.Manifest,
+		Spec:        s.state.Spec,
 	})
 	s.emit(PhaseChangedEvent{From: PhaseGenerating, To: PhaseComplete})
 	return coveragePct
