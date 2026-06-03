@@ -1,4 +1,4 @@
-# Pragma — Technical Specification v5.0
+# Pragma — Technical Specification v5.2
 
 **Status:** Authoritative  
 **Last updated:** June 2026
@@ -27,9 +27,18 @@
 18. [Image Ingest (Groq Scout Vision)](#18-image-ingest-groq-scout-vision)
 19. [Interactive Refinement](#19-interactive-refinement)
 20. [Runtime Smoke Test Agent](#20-runtime-smoke-test-agent)
-21. [CLI Reference](#21-cli-reference)
-22. [Folder Structure](#22-folder-structure)
-23. [Known Limitations](#23-known-limitations)
+21. [Role-Specialized Spec Compilation](#21-role-specialized-spec-compilation)
+22. [Golden Template System](#22-golden-template-system)
+23. [CLI Reference](#23-cli-reference)
+24. [Folder Structure](#24-folder-structure)
+25. [Live Preview / Sandbox](#25-live-preview--sandbox)
+26. [Iterative Chat During Generation](#26-iterative-chat-during-generation)
+27. [Spec Progress Streaming](#27-spec-progress-streaming)
+28. [Concurrent Run Prevention](#28-concurrent-run-prevention)
+29. [Checkpoint Recovery & Validation](#29-checkpoint-recovery--validation)
+30. [Budget Exhaustion UX](#30-budget-exhaustion-ux)
+31. [BYOK OpenAI-Compatible Client](#31-byok-openai-compatible-client)
+32. [Known Limitations](#32-known-limitations)
 
 ---
 
@@ -39,16 +48,17 @@ Pragma is a terminal-first, browser-served software engineering engine. It accep
 
 **Core properties:**
 
-- **$0.03/project** — DeepSeek V4-Flash for codegen, no subscription
+- **~$0.03/project** — BYOK with any OpenAI-compatible provider (DeepSeek recommended)
 - **100% local** — code never leaves the machine; no telemetry
 - **Full-stack** — APIs, databases, auth, Docker, tests, README
 - **Checkpointed** — every slice saved; resume after crash, rate-limit, or power loss
 - **Non-technical friendly** — plain English in, working code out
+- **BYOK (Bring Your Own Key)** — use DeepSeek, OpenAI, Anthropic, Ollama, OpenRouter, Together, or any OpenAI-compatible provider
+- **Live preview** — one-click dev server preview inside the browser (see §24)
+- **Iterative chat during generation** — queue messages mid-build, auto-applied after generation (see §25)
 
 **What it is not:**
 
-- Not a live-preview tool (no browser sandbox runtime)
-- ~~Not an incremental editor~~ Features interactive refinement chat (see §19) for adding features and modifying generated projects
 - Not a deployment platform (generates Docker configs; user deploys)
 
 ---
@@ -386,7 +396,38 @@ If git is not found, a warning is logged and generation continues.
 
 ## 9. Model Routing & Providers
 
-### DeepSeek (required)
+### Primary Codegen Provider (BYOK)
+
+Pragma supports **Bring Your Own Key** — you can use any OpenAI-compatible provider for code generation.
+
+| Provider | Config name | Default Base URL | Thinking Support |
+|----------|------------|------------------|------------------|
+| DeepSeek | `deepseek` | `https://api.deepseek.com` | ✅ (V4 Pro/R1) |
+| OpenAI | `openai` | `https://api.openai.com/v1` | ✅ (o1, o3) |
+| OpenRouter | `openrouter` | `https://openrouter.ai/api/v1` | ❌ |
+| Together AI | `together` | `https://api.together.xyz/v1` | ❌ |
+| Ollama (local) | `ollama` | `http://localhost:11434/v1` | ❌ |
+| Custom | `custom` | User-specified | User-specified |
+
+**Provider configuration** flows through the system as:
+
+1. **Go config** (`~/.pragma/config.toml`):
+   ```toml
+   [provider]
+   name = "openai"
+   base_url = "https://api.openai.com/v1"
+   reasoning_model = "o3-mini"       # optional, overrides auto-detect
+   codegen_model = "gpt-4o"         # optional, overrides auto-detect
+   supports_thinking = true
+   ```
+
+2. **Go → Daemon**: Provider config is injected as environment variables (`PRAGMA_PROVIDER_NAME`, `PRAGMA_PROVIDER_BASE_URL`, `PRAGMA_PROVIDER_REASONING_MODEL`, `PRAGMA_PROVIDER_CODEGEN_MODEL`, `PRAGMA_PROVIDER_SUPPORTS_THINKING`)
+
+3. **Daemon client**: If provider is `deepseek`, uses the optimized `DeepSeekClient`. Otherwise, uses the generic `OpenAICompatClient` (`daemon/pragma_daemon/openai_compat.py`)
+
+Groq remains the default for interview, healing, and image analysis due to its free tier and speed.
+
+### DeepSeek Client
 
 | Field | Value |
 |-------|-------|
@@ -404,7 +445,7 @@ If git is not found, a warning is logged and generation continues.
 
 **Model discovery:** On startup, the daemon calls `/models` and caches results for 24 hours in `~/.pragma/models.json`. Models are ranked by keyword preference lists for reasoning vs codegen tasks.
 
-### Groq (required, free)
+### Groq (optional, free)
 
 | Field | Value |
 |-------|-------|
@@ -416,9 +457,9 @@ If git is not found, a warning is logged and generation continues.
 Used for:
 - Ideation chat (better conversational quality than Flash)
 - Healing loop (1,000 t/s, fast for small fixes)
-- **Image analysis** (`meta-llama/llama-4-scout-17b-16e-instruct` vision) — screenshot/mockup/document analysis, required for the image upload feature
+- **Image analysis** (`meta-llama/llama-4-scout-17b-16e-instruct` vision) — screenshot/mockup/document analysis, requires the Groq key
 
-> **Both keys required since v5.0:** DeepSeek for code generation, Groq for ideation, healing, and image analysis. The SetupGuide enforces both-key configuration before the user can proceed.
+> **Groq is optional since v5.2:** Without a Groq key, the daemon logs a warning but starts normally. Interview and healing fall back to the codegen provider (DeepSeek, OpenAI, etc.). Image upload is disabled. The Setup Guide now treats Groq as optional.
 
 ---
 
@@ -1202,7 +1243,7 @@ Classic Bubble Tea terminal UI. Same pipeline, different interface. Useful in en
 
 ---
 
-## 20. Folder Structure
+## 24. Folder Structure
 
 ```
 pragma/
@@ -1239,7 +1280,8 @@ pragma/
 │   │   ├── handlers.go      # REST endpoint handlers
 │   │   ├── actions.go       # WebSocket action dispatch
 │   │   ├── interview.go     # Ideation phase, manifest gate
-│   │   └── validate.go      # API key validation
+│   │   ├── validate.go      # API key validation with SSRF protection
+│   │   └── preview.go       # Live preview dev server (see §24)
 │   └── tui/
 │       └── *.go             # Bubble Tea screens (home, interview, generating, etc.)
 │
@@ -1291,26 +1333,210 @@ pragma/
 
 ---
 
-## 21. Known Limitations
+## 25. Live Preview / Sandbox
 
-1. ~~No incremental editing.~~ Added in v5.2 — interactive refinement chat (see §19) allows adding features and modifying existing projects through natural conversation.
+After generation, Pragma can start a dev server for the generated project and show a live preview inside the CompleteView.
 
-2. **No live preview.** There is no browser sandbox runtime. The user must run the generated code themselves (`docker compose up`).
+### 25.1 Architecture
 
-3. **No deployment.** Pragma generates Dockerfiles and docker-compose configs. Actual deployment to Railway, Fly.io, etc. is manual.
+```
+CompleteView.svelte → "Live Preview" button
+        │
+        ▼
+POST /api/preview/start { run_id }
+        │
+        ▼
+preview.go (Go server)
+   ├── detectAndStartDevServer(runDir)
+   │   ├── package.json       → npm run dev
+   │   ├── requirements.txt   → python3 main.py
+   │   └── docker-compose.yml → docker compose up -d
+   │
+   └── Returns preview URL
+        │
+        ▼
+CompleteView embeds <iframe> pointing to the preview URL
+```
 
-4. **English only.** All prompts, generated comments, and documentation are in English.
+### 25.2 Endpoints
 
-5. **Single language per project.** Each project uses one primary language. Polyglot projects (e.g., Go backend + React frontend) are not supported in a single run.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/preview/start` | POST | Start dev server, return URL |
+| `/api/preview/stop` | POST | Stop running preview |
+| `/api/preview/status` | GET | Current preview state |
+| `/api/preview/proxy/` | GET | Proxy requests to dev server |
 
-6. **Spec amendment is fire-and-forget.** When repeated file failures suggest a spec issue, a `spec_amendment_proposed` event is emitted but the pipeline does not pause. Full blocking amendment with user approval is a planned feature.
+### 25.3 Implementation
 
-7. **Pause is not implemented.** The `pause_run` action is accepted but does nothing. The pipeline runs to completion or failure.
+**File:** `internal/server/preview.go`
 
-8. **pragma publish** creates a local git repo and prints GitHub push instructions. It does not push automatically (no GitHub OAuth).
+- Only one preview can run at a time (mutex-guarded `activePreview` state)
+- Ports are auto-allocated starting from 4000
+- For Node.js projects: auto-runs `npm install` if `node_modules` is missing
+- The iframe uses `sandbox="allow-scripts allow-same-origin allow-forms"` for security
+- Preview stops when user clicks "Stop" or starts a new preview
 
-9. **Test execution requires Docker or local toolchain.** The test runner executes `spec.setup.test` in the output directory. If the required runtime (Python, Node, Go) is not installed, tests will fail.
+### 25.4 Project Type Detection
 
-10. **Docker smoke test healthcheck uses polling.** The smoke test polls container states every 3 seconds for up to 30 seconds. Applications with very slow startup (some Next.js SSR pages may take 60s+) may be incorrectly flagged as failed. The timeout is not yet configurable per profile.
+| File found | Command | Port |
+|------------|---------|------|
+| `package.json` | `npm run dev -- --port <port>` | 4000+ |
+| `requirements.txt` + `main.py`/`app.py` | `python3 main.py` | 4000+ |
+| `docker-compose.yml`/`compose.yml` | `docker compose up -d --build` | 4000+ |
 
-11. **Refinement requires original checkpoint data.** The `checkpointManifest` and `checkpointSpec` stores are populated from the `run_complete` WebSocket event. If the browser was closed before the run completed, these stores will be empty and the Refine feature will not work for that run.
+---
+
+## 26. Iterative Chat During Generation
+
+Users can send messages during the generation phase. These are queued and automatically applied as post-generation refinements.
+
+### 26.1 Architecture
+
+```
+User types message during generation
+        │
+        ▼
+dispatchAction (actions.go)
+        │
+        ├── If phase == PhaseGenerating → service.QueueMessage(msg)
+        │   └── Broadcast "Message queued" to frontend
+        │
+        └── Otherwise → normal interview flow
+```
+
+After generation completes, queued messages are available via `DrainQueuedMessages()` and can be applied using the standard `extend_project` → `apply_delta` pipeline.
+
+### 26.2 Implementation
+
+**Pipeline service additions** (`internal/pipeline/service.go`):
+```go
+type Service struct {
+    // ...
+    QueuedMessages []string
+    queueMu        sync.Mutex
+}
+
+func (s *Service) QueueMessage(msg string)
+func (s *Service) DrainQueuedMessages() []string
+func (s *Service) HasQueuedMessages() bool
+```
+
+**Frontend** (`GeneratingView.svelte`):
+- Chat textarea with "Queue" button at the bottom of the generation view
+- Shows "N messages queued" counter in the stats row
+- Messages are sent via the normal `sendMessage()` WebSocket action
+
+---
+
+## 27. Spec Progress Streaming
+
+The spec compilation phase now emits progress events so the frontend can show live status rather than a static spinner.
+
+### 27.1 Events
+
+```go
+type SpecProgressEvent struct {
+    Pass    int    // 1, 2, or 3
+    Status  string // "started", "completed", "error"
+    Message string // Human-readable status
+}
+```
+
+### 27.2 Frontend
+
+`WorkingView.svelte` subscribes to the `specProgress` store and shows the current pass message:
+- "Drafting spec (Pass 1/3 — Lead Architect)..."
+- "Reviewing for security (Pass 2/3)..."
+- "Spec compiled successfully"
+
+---
+
+## 28. Concurrent Run Prevention
+
+The pipeline service now prevents multiple runs from starting simultaneously.
+
+```go
+func (s *Service) StartRun(ctx context.Context, manifest string, profileName string) error {
+    if !s.runLock.TryLock() {
+        return fmt.Errorf("a run is already in progress")
+    }
+    defer s.runLock.Unlock()
+    // ...
+}
+```
+
+---
+
+## 29. Checkpoint Recovery & Validation
+
+Checkpoints are now validated before loading, with automatic recovery from backup.
+
+**Backup strategy:** Before overwriting `checkpoint.json`, the previous version is copied to `checkpoint.json.bak`.
+
+**Validation on load:**
+- JSON must parse successfully
+- `RunID` field must be non-empty
+- `Phase` field must be non-zero
+
+If the primary checkpoint is corrupted, the `.bak` file is attempted. If that also fails, a clear error is returned.
+
+---
+
+## 30. Budget Exhaustion UX
+
+When a file is skipped due to budget constraints, the error message now includes precise details:
+
+```
+"Budget exceeded for src/routes/auth.py. Spent: $0.18 / $0.25 cap. Need ~$0.04 more.
+Increase your per-run budget in Settings or use --budget flag."
+```
+
+A non-fatal `ErrorEvent` is emitted so the frontend can display this to the user without aborting the entire run.
+
+---
+
+## 31. BYOK OpenAI-Compatible Client
+
+When the user configures a non-DeepSeek provider, Pragma uses `OpenAICompatClient` (`daemon/pragma_daemon/openai_compat.py`) instead of `DeepSeekClient`.
+
+### 31.1 Supported Providers
+
+| Provider | Auto-detect | Thinking |
+|----------|-------------|----------|
+| OpenAI | ✅ Models endpoint | ✅ (o1, o3) |
+| OpenRouter | ✅ Models endpoint | ❌ |
+| Together AI | ✅ Models endpoint | ❌ |
+| Ollama (local) | ✅ /api/tags | ❌ |
+| Anthropic | ✅ Models endpoint | ❌ |
+| Any OpenAI-compatible | Manual model config | User-configurable |
+
+### 31.2 Model Discovery
+
+The client attempts to call `GET /models` to discover available models. If that fails (Ollama), it falls back to `GET /api/tags`. User-configured model names in config.toml take precedence over auto-discovery.
+
+### 31.3 Pricing & Budget
+
+Since Pragma cannot know the pricing of arbitrary providers, the budget oracle uses DeepSeek V4-Flash pricing as a conservative estimate. Users with more expensive providers should set `lifetime_cap` and `per_run_cap` accordingly in `config.toml`.
+
+---
+
+## 32. Known Limitations
+
+1. **No deployment.** Pragma generates Dockerfiles and docker-compose configs. Actual deployment to Railway, Fly.io, etc. is manual.
+
+2. **English only.** All prompts, generated comments, and documentation are in English.
+
+3. **Single language per project.** Each project uses one primary language. Polyglot projects (e.g., Go backend + React frontend) are not supported in a single run.
+
+4. **Spec amendment is fire-and-forget.** When repeated file failures suggest a spec issue, a `spec_amendment_proposed` event is emitted but the pipeline does not pause. Full blocking amendment with user approval is a planned feature.
+
+5. **Pause is not implemented.** The `pause_run` action is accepted but does nothing. The pipeline runs to completion or failure.
+
+6. **pragma publish** creates a local git repo and prints GitHub push instructions. It does not push automatically (no GitHub OAuth).
+
+7. **Test execution requires Docker or local toolchain.** The test runner executes `spec.setup.test` in the output directory. If the required runtime (Python, Node, Go) is not installed, tests will fail.
+
+8. **Docker smoke test healthcheck uses polling.** The smoke test polls container states every 3 seconds for up to 30 seconds. Applications with very slow startup (some Next.js SSR pages may take 60s+) may be incorrectly flagged as failed. The timeout is not yet configurable per profile.
+
+9. **Refinement requires original checkpoint data.** The `checkpointManifest` and `checkpointSpec` stores are populated from the `run_complete` WebSocket event. If the browser was closed before the run completed, these stores will be empty and the Refine feature will not work for that run.

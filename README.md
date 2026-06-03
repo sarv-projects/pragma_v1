@@ -17,7 +17,7 @@
 
 Pragma is a tool that turns your plain English ideas into complete, working applications. You tell it what you want to build, it asks a few simple clarifying questions, and then it builds the app for you.
 
-**Example:** Type *"A freelancer client portal where I share project updates, clients approve milestones, I send invoices, they pay online, and we both see a dashboard with progress"* and Pragma generates the entire working application.
+**Example:** Type *"A freelancer client portal where I share project updates, clients approve milestones, I send invoices, they pay online, and we both see a dashboard with progress"* and Pragma generates the entire working application — database, user accounts, API routes, a Dockerfile, tests, and a plain-English README.
 
 Everything runs locally on your computer. You do not need to be a developer to use it.
 
@@ -39,6 +39,9 @@ Everything runs locally on your computer. You do not need to be a developer to u
 | **Where it lives** | **Your computer, always** | Their cloud | Your machine | Their cloud |
 | **Cost model** | Pay-as-you-go AI keys (cents per project) | Monthly subscription | Monthly subscription | Enterprise pricing |
 | **What you get** | Complete app files (database, logins, setup, checks) | Hosted app | AI-assisted building | Autonomous task execution |
+| **Code generation** | Full backend + frontend + Docker + tests | Mostly frontend | Edits existing code | Edits existing code |
+| **LLM choice** | Bring Your Own Key (DeepSeek, OpenAI, Ollama, OpenRouter, etc.) | Locked to their models | Locked to their models | Locked to their models |
+| **Live preview** | ✅ In-browser dev server preview | ✅ Built-in | ❌ | ❌ |
 
 ---
 
@@ -60,35 +63,48 @@ Open your terminal (or Command Prompt on Windows) and run:
 ```bash
 pragma setup
 ```
-*Don't worry about dependencies—Pragma will automatically create a safe, isolated environment and install everything it needs behind the scenes.*
+*Pragma will automatically create a safe, isolated environment and install everything it needs behind the scenes.*
 
 ### 3. Start Pragma
 ```bash
 pragma
 ```
 Your default web browser will automatically open to `http://localhost:3777`. 
-*(Note: If you are using WSL on Windows, the URL will be printed in your terminal. Just copy and paste it into your Windows browser).*
+*(If you are using WSL on Windows, the URL will be printed in your terminal. Just copy and paste it into your Windows browser).*
 
 ### 4. Add Your API Keys
-On your first run, the friendly in-app **Setup Guide** will walk you through adding two API keys step-by-step:
-1. **DeepSeek** (Required): Powers the app building. Pay-as-you-go (a $2 top-up is enough for many projects).
-2. **Groq** (Required): Powers the conversation and image analysis. Completely free, no credit card required.
+On your first run, the friendly in-app **Setup Guide** will walk you through adding your API keys step-by-step:
+1. **Code generation key** (Required): Pragma supports **any OpenAI-compatible provider** — DeepSeek (recommended, ~$0.03/project), OpenAI, OpenRouter, Together AI, or local models via Ollama. Add your own API key and choose your provider.
+2. **Groq key** (Optional, free): Adds image analysis support and faster chat responses. Get a free key at [console.groq.com](https://console.groq.com).
 
 ### 5. Describe Your App
 Type what you want to build in plain English. Pragma will auto-select the best technology, ask a few clarifying questions, and build your complete application.
 
-> **Stuck?** Run `pragma doctor` in your terminal. It will automatically check your setup, keys, and network connectivity and tell you exactly how to fix any issues.
+> **Stuck?** Run `pragma doctor` in your terminal. It will check everything and tell you exactly how to fix any issues.
+
+---
+
+## What You Can Do
+
+- **Build complete apps** from a single sentence description
+- **Upload screenshots or wireframes** — Pragma's Groq vision reads them and extracts the app design
+- **Iterate during generation** — forgot something mid-build? Type it in and it queues for post-generation refinement
+- **Live preview** — see your app running in your browser with one click
+- **Refine your projects** — chat with Pragma after generation to add features or fix issues
+- **Use your own AI models** — BYOK with OpenAI, Anthropic, Ollama, OpenRouter, Together, or any OpenAI-compatible provider
+- **Review the plan** before building — approve the architecture blueprint, then approve the execution plan
 
 ---
 
 ## What You Get
 
 Every generated project is ready to use and includes:
-- ✅ All the files needed for your application
-- ✅ Database setup (PostgreSQL or SQLite)
-- ✅ User accounts and secure logins
-- ✅ An easy setup to run the app immediately on your computer
-- ✅ Built-in checks to make sure everything works correctly
+- ✅ All the source files for your application
+- ✅ Database setup (PostgreSQL or SQLite, with migrations)
+- ✅ User accounts and secure logins (JWT authentication)
+- ✅ A Docker setup to run the app immediately
+- ✅ Automated tests
+- ✅ Built-in checks that catch mistakes and auto-fix them
 - ✅ A plain-English guide explaining how to use your new app
 
 ---
@@ -100,79 +116,22 @@ flowchart TD
     A[You describe the app in plain English] --> B[Ideation: Clarifying questions]
     B --> C[Research: Fetches current library docs]
     C --> D[Plan: Builds a detailed blueprint]
-    D --> E{You review & approve}
+    D --> E{You review & approve the plan}
     E -->|Yes| F[Build: Creates your app files]
     F --> G[Fix: Auto-corrects any mistakes]
     G --> H[Verify: Runs safety checks and saves your project]
-    H --> I[Complete app on your computer 🎉]
+    H --> I[🎉 Complete app on your computer]
+    I --> J[Live preview: See it running]
+    I --> K[Refine: Chat to add features]
 ```
-
----
-
-<details>
-<summary><strong>⚙️ Advanced: Architecture, Commands & Contributing (Click to expand)</strong></summary>
-
-*Note: This section is for developers and technical contributors. For full technical architecture details, please see [`spec.md`](spec.md).*
-
-### Architecture
-Pragma uses a lightweight, self-contained design:
-- **Go Binary**: The main application. It runs the web server, manages your budget, and orchestrates the workflow.
-- **Python Background Process**: Handles all the heavy lifting: talking to AI models, compiling specs, and generating code.
-- **SvelteKit UI**: A modern, embedded web interface for live progress, plan review, and approvals.
-
-### Useful Commands
-```bash
-pragma                           # Start the web UI
-pragma setup                     # Automatically install background dependencies
-pragma --tui                     # Use the terminal interface instead of the browser
-pragma doctor                    # Check your setup, keys, and connectivity
-pragma upgrade                   # Safely update Pragma to the latest version
-pragma clean                     # Remove old generated projects (keeps the 5 most recent)
-pragma --budget 0.50             # Set a strict spending limit for a single run
-```
-
-### Configuration
-You can adjust settings in `~/.pragma/config.toml`:
-```toml
-mode    = "fast"           # AI provider mode
-profile = "fastapi-async"  # Default tech stack
-
-[budget]
-lifetime_cap = 2.00        # Hard cap on total spend ($)
-per_run_cap  = 0.25        # Cap per project ($)
-```
-
-### Contributing & Source Build
-We welcome contributions! 
-
-**To build from source:**
-```bash
-git clone https://github.com/sarv-projects/pragma.git
-cd pragma
-
-# Linux / macOS / WSL
-./install.sh
-
-# Windows (PowerShell)
-.\install.ps1
-```
-
-**Before submitting a Pull Request, please run:**
-```bash
-go build ./...
-go test ./...
-cd daemon && pytest
-cd web && npm run build
-```
-</details>
 
 ---
 
 ## Privacy & Security
 
 - **Your App is Yours**: Generated files stay on your disk. Pragma does not host your project or run a cloud backend.
-- **No Telemetry**: The only data that leaves your machine is what you send directly to DeepSeek and Groq under your own API keys.
-- **Secure Storage**: API keys are stored securely in your operating system's keyring. 
+- **No Telemetry**: The only data that leaves your machine is what you send directly to your chosen AI provider(s) under your own API keys.
+- **Secure Storage**: API keys are stored securely in your operating system's keyring or in an encrypted file.
 
 If you discover a security vulnerability, please refer to our [Security Policy](SECURITY.md).
 
@@ -182,6 +141,67 @@ If you discover a security vulnerability, please refer to our [Security Policy](
 
 - 💬 **Questions & Ideas**: Join our [GitHub Discussions](https://github.com/sarv-projects/pragma/discussions)
 - 🐛 **Bug Reports**: Open an issue on [GitHub Issues](https://github.com/sarv-projects/pragma/issues)
+
+---
+
+<details>
+<summary><strong>⚙️ Advanced: Commands, Configuration & Building (Click to expand)</strong></summary>
+
+*This section covers the technical details for developers and power users. For full architecture, see [`spec.md`](spec.md).*
+
+### Useful Commands
+```bash
+pragma                           # Start the web UI (default)
+pragma setup                     # Install background dependencies
+pragma doctor                    # Check your setup, keys, and connectivity
+pragma --tui                     # Use the terminal interface instead of browser
+pragma --headless                # CI mode — read manifest from stdin
+pragma --budget 0.50             # Set a per-run spending limit
+pragma upgrade                   # Update Pragma to the latest version
+pragma clean                     # Remove old generated projects (keeps 5 most recent)
+```
+
+### Configuration
+Settings in `~/.pragma/config.toml`:
+```toml
+profile = "fastapi-async"  # Default tech stack
+
+[budget]
+lifetime_cap = 2.00        # Total spend cap ($)
+per_run_cap  = 0.25        # Per-project cap ($)
+
+[output]
+directory = "./output"     # Where generated projects go
+git_init  = true           # Auto-create git repo
+
+[provider]
+name             = "deepseek"
+base_url         = "https://api.deepseek.com"
+reasoning_model  = ""
+codegen_model    = ""
+supports_thinking = true
+```
+
+### Architecture
+Pragma is a single Go binary that spawns a Python daemon for AI work and serves a modern web interface:
+- **Go** — web server, pipeline orchestration, budget enforcement, checkpointing
+- **Python** — LLM calls (via your API keys), spec compilation, code generation, AST checking
+- **SvelteKit** — embedded web app for real-time progress, plan review, and approvals
+
+### Build from Source
+```bash
+git clone https://github.com/sarv-projects/pragma.git
+cd pragma
+./install.sh           # Linux / macOS / WSL
+# or: .\install.ps1    # Windows
+
+# Before submitting a PR:
+go build ./...
+go test ./...
+cd daemon && pytest
+cd web && npm run build
+```
+</details>
 
 ---
 
