@@ -25,6 +25,23 @@ import (
 )
 
 func main() {
+	// Check for subcommands before parsing global flags to prevent
+	// the global flag parser from interfering with future subcommand-specific flags.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "doctor":
+			os.Exit(runDoctor())
+		case "upgrade":
+			os.Exit(runUpgrade())
+		case "setup":
+			os.Exit(runSetup())
+		case "publish":
+			os.Exit(runPublish())
+		case "clean":
+			os.Exit(runClean())
+		}
+	}
+
 	headless := flag.Bool("headless", false, "Run in headless mode via stdin")
 	useTUI := flag.Bool("tui", false, "Run in terminal UI mode (classic)")
 	budgetCap := flag.Float64("budget", 0.0, "Per-run budget cap (overrides config)")
@@ -34,26 +51,6 @@ func main() {
 	if *showVersion {
 		fmt.Println("pragma", pragmaCurrentVersion)
 		return
-	}
-
-	if len(flag.Args()) > 0 && flag.Args()[0] == "doctor" {
-		os.Exit(runDoctor())
-	}
-
-	if len(flag.Args()) > 0 && flag.Args()[0] == "upgrade" {
-		os.Exit(runUpgrade())
-	}
-
-	if len(flag.Args()) > 0 && flag.Args()[0] == "setup" {
-		os.Exit(runSetup())
-	}
-
-	if len(flag.Args()) > 0 && flag.Args()[0] == "publish" {
-		os.Exit(runPublish())
-	}
-
-	if len(flag.Args()) > 0 && flag.Args()[0] == "clean" {
-		os.Exit(runClean())
 	}
 
 	cfg, err := config.Load(config.DefaultPath())

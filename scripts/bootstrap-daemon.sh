@@ -90,7 +90,7 @@ else
     if grep -q "python_executable" "$CONFIG_FILE"; then
         # Use a temp file for sed portability (BSD vs GNU)
         TMP_CFG=$(mktemp)
-        sed "s|python_executable.*|python_executable = \"$VENV_PYTHON\"|" "$CONFIG_FILE" > "$TMP_CFG"
+        sed "s|^[[:space:]]*python_executable[[:space:]]*=.*|python_executable = \"$VENV_PYTHON\"|" "$CONFIG_FILE" > "$TMP_CFG"
         mv "$TMP_CFG" "$CONFIG_FILE"
     else
         printf '\n[daemon]\npython_executable = "%s"\n' "$VENV_PYTHON" >> "$CONFIG_FILE"

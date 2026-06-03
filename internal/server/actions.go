@@ -181,7 +181,9 @@ func (s *Server) resumeRun(runID string) {
 		return
 	}
 
-	ctx := context.Background()
+	// Use a timeout context instead of context.Background() to prevent leaks on shutdown
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
 	if err := s.service.Resume(ctx, *state); err != nil {
 		log.Printf("server: resume failed for run %s: %v", runID, err)
 		s.hub.broadcast <- eventToJSON(pipeline.ErrorEvent{Err: err, Fatal: true})

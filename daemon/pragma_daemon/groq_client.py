@@ -63,7 +63,7 @@ class GroqClient:
             await self.client.aclose()
 
     @retry(
-        wait=wait_exponential(multiplier=1, min=2, max=30),
+        wait=wait_exponential(multiplier=1, min=2, max=30, max_jitter=5),
         stop=stop_after_attempt(3),
         retry=retry_if_exception(_is_retryable),
         before_sleep=before_sleep_log(logger, logging.WARNING),

@@ -85,7 +85,7 @@
 						</div>
 					{:else}
 						<!-- Error message -->
-						<div class="flex justify-center">
+						<div class="flex justify-center" role="status" aria-live="polite">
 							<div class="rounded-lg bg-[var(--error)]/10 border border-[var(--error)]/30 px-4 py-2 text-sm text-[var(--error)]">
 								{msg.content}
 							</div>

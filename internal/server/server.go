@@ -130,6 +130,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/resume", s.handleResume)
 	s.mux.HandleFunc("GET /api/status", s.handleStatus)
 	s.mux.HandleFunc("GET /api/runs", s.handleListRuns)
+	s.mux.HandleFunc("DELETE /api/runs/{run_id}", s.handleDeleteRun)
 	s.mux.HandleFunc("GET /api/download/{run_id}", s.handleDownload)
 	s.mux.HandleFunc("POST /api/open-folder", s.handleOpenFolder)
 	s.mux.HandleFunc("GET /api/readme", s.handleReadme)
@@ -221,6 +222,7 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 func (s *Server) forwardEvents(ctx context.Context) {
 	s.mu.RLock()
 	events := s.events
+	ledger := s.ledger
 	s.mu.RUnlock()
 	if events == nil {
 		return
@@ -234,8 +236,8 @@ func (s *Server) forwardEvents(ctx context.Context) {
 				return
 			}
 			// Side-effect: record completed runs in the ledger
-			if rc, ok := ev.(pipeline.RunCompleteEvent); ok && s.ledger != nil {
-				s.ledger.RecordProject(rc.ProjectName, rc.ProjectName, rc.TotalCost)
+			if rc, ok := ev.(pipeline.RunCompleteEvent); ok && ledger != nil {
+				ledger.RecordProject(rc.ProjectName, rc.ProjectName, rc.TotalCost)
 			}
 			msg := eventToJSON(ev)
 			if msg != nil {

@@ -99,7 +99,9 @@ func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		if err := s.service.Resume(context.Background(), *state); err != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Minute)
+		defer cancel()
+		if err := s.service.Resume(ctx, *state); err != nil {
 			s.hub.broadcast <- eventToJSON(pipeline.ErrorEvent{Err: err, Fatal: true})
 		}
 	}()
@@ -143,6 +145,12 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Security: validate runID doesn't contain path traversal characters
+	if strings.Contains(runID, "..") || strings.Contains(runID, "/") || strings.Contains(runID, "\\") {
+		writeError(w, http.StatusBadRequest, "invalid run_id")
+		return
+	}
+
 	runDir := filepath.Join(s.config.Output.Directory, runID)
 	if _, err := os.Stat(runDir); os.IsNotExist(err) {
 		writeError(w, http.StatusNotFound, "run not found")
@@ -173,17 +181,53 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
+		defer f.Close()
 
 		zf, err := zw.Create(rel)
 		if err != nil {
-			f.Close()
 			return err
 		}
 
 		_, _ = io.Copy(zf, f)
-		f.Close()
 		return nil
 	})
+}
+
+func (s *Server) handleDeleteRun(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("run_id")
+	if runID == "" {
+		writeError(w, http.StatusBadRequest, "run_id is required")
+		return
+	}
+
+	outputDir := s.config.Output.Directory
+	if outputDir == "" {
+		outputDir = "./output"
+	}
+	if !filepath.IsAbs(outputDir) {
+		if abs, err := filepath.Abs(outputDir); err == nil {
+			outputDir = abs
+		}
+	}
+	
+	// Security: validate runID doesn't contain path traversal characters
+	if strings.Contains(runID, "..") || strings.Contains(runID, "/") || strings.Contains(runID, "\\") {
+		writeError(w, http.StatusBadRequest, "invalid run_id")
+		return
+	}
+
+	runDir := filepath.Join(outputDir, runID)
+	if _, err := os.Stat(runDir); os.IsNotExist(err) {
+		writeError(w, http.StatusNotFound, "run not found")
+		return
+	}
+
+	if err := os.RemoveAll(runDir); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to delete run")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 func (s *Server) handleOpenFolder(w http.ResponseWriter, r *http.Request) {

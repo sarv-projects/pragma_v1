@@ -159,7 +159,7 @@ class DeepSeekClient:
         return available
 
     @retry(
-        wait=wait_exponential(multiplier=1, min=2, max=20),
+        wait=wait_exponential(multiplier=1, min=2, max=20, max_jitter=5),
         stop=stop_after_attempt(4),
         retry=retry_if_exception(_is_retryable_error),
         before_sleep=before_sleep_log(logger, logging.WARNING),

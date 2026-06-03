@@ -284,7 +284,7 @@ func (s *Service) runGeneration(
 		s.stateMu.Lock()
 		s.state.SliceIndex = sliceIdx
 		s.stateMu.Unlock()
-		s.checkpoint()
+		go s.checkpoint() // Async to avoid blocking generation slices
 
 		var wg sync.WaitGroup
 
@@ -563,20 +563,23 @@ func (s *Service) finishRun(ctx context.Context, runDir string, healedCount, tot
 	if err := json.Unmarshal(specData, &specSetup); err == nil && specSetup.Setup.Test != "" {
 		testCmd := specSetup.Setup.Test
 		if isAllowedTestCommand(testCmd) {
-			cmd := exec.Command("sh", "-c", testCmd)
-			cmd.Dir = runDir
-			testOutput, testErr := cmd.CombinedOutput()
-			// Truncate test output to 1MB max
-			const maxTestOutput = 1 << 20
-			if len(testOutput) > maxTestOutput {
-				testOutput = testOutput[len(testOutput)-maxTestOutput:]
+			parts := strings.Fields(testCmd)
+			if len(parts) > 0 {
+				cmd := exec.Command(parts[0], parts[1:]...)
+				cmd.Dir = runDir
+				testOutput, testErr := cmd.CombinedOutput()
+				// Truncate test output to 1MB max
+				const maxTestOutput = 1 << 20
+				if len(testOutput) > maxTestOutput {
+					testOutput = testOutput[len(testOutput)-maxTestOutput:]
+				}
+				passed := testErr == nil
+				s.emit(TestRunEvent{
+					Command: testCmd,
+					Passed:  passed,
+					Output:  string(testOutput),
+				})
 			}
-			passed := testErr == nil
-			s.emit(TestRunEvent{
-				Command: testCmd,
-				Passed:  passed,
-				Output:  string(testOutput),
-			})
 		} else {
 			s.logEvent("warn", fmt.Sprintf("Skipping test command (not in allowlist): %s", testCmd))
 		}
@@ -665,7 +668,12 @@ func (s *Service) Resume(ctx context.Context, state RunState) error {
 	s.stateMu.Unlock()
 	s.emit(SpecReadyEvent{Spec: state.Spec, FileCount: totalFiles})
 
+	startGenCost := s.oracle.Status().RunSpent
 	healed, genErr := s.runGeneration(ctx, prof, slices, totalFiles, specSummary, runDir, skip)
+	if s.ledger != nil {
+		endGenCost := s.oracle.Status().RunSpent
+		s.ledger.RecordPhase("generation", endGenCost-startGenCost)
+	}
 	if genErr != nil {
 		return genErr
 	}

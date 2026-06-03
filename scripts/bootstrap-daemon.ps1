@@ -81,7 +81,7 @@ if (-not (Test-Path $CONFIG_FILE)) {
 } else {
     $content = Get-Content $CONFIG_FILE -Raw
     if ($content -match "python_executable") {
-        $content = $content -replace 'python_executable\s*=\s*"[^"]*"', "python_executable = `"$VENV_PYTHON`""
+        $content = $content -replace 'python_executable\s*=\s*[''"]?[^''"\r\n]*[''"]?', "python_executable = `"$VENV_PYTHON`""
         Set-Content -Path $CONFIG_FILE -Value $content -Encoding UTF8
     } else {
         Add-Content -Path $CONFIG_FILE -Value "`n[daemon]`npython_executable = `"$VENV_PYTHON`"" -Encoding UTF8

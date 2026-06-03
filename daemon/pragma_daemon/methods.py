@@ -52,6 +52,53 @@ _DEVELOPER_TERMS = {
 }
 
 
+def _extract_json(text: str) -> str:
+    """Extract the first valid JSON object or array from text, handling nested structures and string literals."""
+    start_obj = text.find('{')
+    start_arr = text.find('[')
+    
+    if start_obj == -1 and start_arr == -1:
+        return ""
+        
+    if start_obj != -1 and (start_arr == -1 or start_obj < start_arr):
+        start = start_obj
+        end_char = '}'
+        start_char = '{'
+    else:
+        start = start_arr
+        end_char = ']'
+        start_char = '['
+
+    count = 0
+    in_string = False
+    escape_next = False
+    
+    for i in range(start, len(text)):
+        char = text[i]
+        
+        if escape_next:
+            escape_next = False
+            continue
+            
+        if char == '\\':
+            escape_next = True
+            continue
+            
+        if char == '"' and not escape_next:
+            in_string = not in_string
+            continue
+            
+        if not in_string:
+            if char == start_char:
+                count += 1
+            elif char == end_char:
+                count -= 1
+                if count == 0:
+                    return text[start:i+1]
+                    
+    return ""
+
+
 class RPCMethods:
     def __init__(
         self, deepseek: DeepSeekClient, cache: L1Cache, groq: GroqClient | None = None
@@ -59,20 +106,6 @@ class RPCMethods:
         self.ds = deepseek
         self.cache = cache
         self.groq = groq
-
-def _extract_json_braces(text: str, start_char='{', end_char='}') -> str:
-    start = text.find(start_char)
-    if start == -1:
-        return ""
-    count = 0
-    for i in range(start, len(text)):
-        if text[i] == start_char:
-            count += 1
-        elif text[i] == end_char:
-            count -= 1
-            if count == 0:
-                return text[start:i+1]
-    return ""  # optional — if present, used for interview + heal
 
     async def ping(self) -> str:
         return "pong"
@@ -174,7 +207,7 @@ def _extract_json_braces(text: str, start_char='{', end_char='}') -> str:
             return json.loads(text)
         except Exception as e:
             logger.warning(f"refine_spec failed: {e}")
-            raise ValueError(f"Failed to refine spec: {e}")
+            raise ValueError(f"Failed to refine spec: {e}") from e
 
     async def do_research(self, manifest: dict, profile: dict) -> dict:
         cache_key = "do_research:" + json.dumps(
@@ -681,7 +714,7 @@ Output ONLY the Markdown content.
             if text.startswith("{"):
                 delta_spec = json.loads(text)
             else:
-                extracted = _extract_json_braces(text)
+                extracted = _extract_json(text)
                 if extracted:
                     delta_spec = json.loads(extracted)
                 else:

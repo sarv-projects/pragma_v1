@@ -1,7 +1,21 @@
 <script lang="ts">
-	import { phase, budgetRemaining, resetStores, recentRuns, resumeRun } from '$lib/stores/ws';
+	import { phase, budgetRemaining, resetStores, recentRuns, resumeRun, loadRecentRuns } from '$lib/stores/ws';
 	import { guideActive } from '$lib/stores/settings';
 	import Settings from '$lib/components/Settings.svelte';
+
+	async function deleteProject(runId: string) {
+		try {
+			const res = await fetch(`/api/runs/${runId}`, { method: 'DELETE' });
+			if (!res.ok) {
+				const errorText = await res.text();
+				throw new Error(errorText || `Status ${res.status}`);
+			}
+			await loadRecentRuns();
+		} catch (err) {
+			console.error('Failed to delete project', err);
+			alert('Failed to delete project: ' + (err instanceof Error ? err.message : err));
+		}
+	}
 
 	let collapsed = $state(false);
 	let showSettings = $state(false);
@@ -44,12 +58,24 @@
 			<div class="space-y-1">
 				{#if $recentRuns.length > 0}
 					{#each $recentRuns as run (run.run_id)}
-						<button 
-							onclick={() => resumeRun(run.run_id)}
-							class="w-full text-left rounded-lg px-3 py-2 text-sm text-[var(--text-muted)] transition-fluid hover:bg-[var(--bg-hover)] cursor-pointer"
-						>
-							{run.project_name || run.run_id}
-						</button>
+						<div class="group relative flex w-full items-center rounded-lg transition-fluid hover:bg-[var(--bg-hover)]">
+							<button 
+								onclick={() => resumeRun(run.run_id)}
+								class="flex-1 text-left pl-3 pr-10 py-2 text-sm text-[var(--text-muted)] cursor-pointer truncate"
+								title={run.project_name || run.run_id}
+							>
+								{run.project_name || run.run_id}
+							</button>
+							<button
+								onclick={(e) => { e.stopPropagation(); deleteProject(run.run_id); }}
+								class="absolute right-2 z-10 opacity-0 group-hover:opacity-100 rounded p-1 text-[var(--text-dim)] hover:bg-[var(--bg-base)] hover:text-red-400 transition-fluid"
+								aria-label="Delete project"
+							>
+								<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+								</svg>
+							</button>
+						</div>
 					{/each}
 				{:else}
 					<div class="rounded-lg px-3 py-2 text-sm text-[var(--text-muted)] transition-fluid hover:bg-[var(--bg-hover)]">
@@ -94,19 +120,47 @@
 				{#if !collapsed}<span>Help</span>{/if}
 			</button>
 			{#if showHelp}
-				<div class="absolute bottom-full left-0 mb-2 w-56 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)] p-3 shadow-xl z-50">
-					<p class="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--text-dim)]">Help</p>
-					<ul class="space-y-2 text-sm">
+				<div class="absolute bottom-full left-0 mb-2 w-56 rounded-lg border border-[var(--border)] bg-[var(--bg-raised)]/95 backdrop-blur-md p-3 shadow-2xl z-50">
+					<p class="mb-2.5 text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)]">Help</p>
+					<ul class="space-y-2.5 text-sm">
 						<li>
-							<a href="https://github.com/sarv-projects/pragma" target="_blank" rel="noopener noreferrer" class="text-[var(--brand-light)] hover:underline">Documentation</a>
+							<a 
+								href="https://github.com/sarv-projects/pragma_v1" 
+								target="_blank" 
+								rel="noopener noreferrer" 
+								class="flex items-center gap-2.5 text-[var(--brand-light)] transition-fluid hover:text-[var(--text-primary)] hover:underline"
+							>
+								<svg class="h-4 w-4 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+								</svg>
+								<span>Documentation</span>
+							</a>
 						</li>
 						<li>
-							<a href="https://github.com/sarv-projects/pragma/issues" target="_blank" rel="noopener noreferrer" class="text-[var(--brand-light)] hover:underline">Report an issue</a>
+							<a 
+								href="https://github.com/sarv-projects/pragma_v1/issues" 
+								target="_blank" 
+								rel="noopener noreferrer" 
+								class="flex items-center gap-2.5 text-[var(--brand-light)] transition-fluid hover:text-[var(--text-primary)] hover:underline"
+							>
+								<svg class="h-4 w-4 opacity-80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+								</svg>
+								<span>Report an issue</span>
+							</a>
 						</li>
-						<li class="border-t border-[var(--border)] pt-2">
-							<p class="text-xs text-[var(--text-dim)] mb-1">Keyboard shortcuts</p>
-							<p class="text-xs text-[var(--text-muted)]"><kbd class="rounded bg-[var(--bg-base)] px-1">Ctrl+C</kbd> Stop</p>
-							<p class="text-xs text-[var(--text-muted)]"><kbd class="rounded bg-[var(--bg-base)] px-1">Cmd+Enter</kbd> Submit</p>
+						<li class="border-t border-[var(--border)] pt-2.5">
+							<p class="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-dim)] mb-2">Keyboard shortcuts</p>
+							<div class="space-y-1.5">
+								<div class="flex items-center justify-between text-xs text-[var(--text-muted)]">
+									<span>Stop execution</span>
+									<kbd class="rounded bg-[var(--bg-base)] px-1.5 py-0.5 border border-[var(--border)] font-mono text-[10px] text-[var(--text-primary)] shadow-sm">Ctrl+C</kbd>
+								</div>
+								<div class="flex items-center justify-between text-xs text-[var(--text-muted)]">
+									<span>Submit prompt</span>
+									<kbd class="rounded bg-[var(--bg-base)] px-1.5 py-0.5 border border-[var(--border)] font-mono text-[10px] text-[var(--text-primary)] shadow-sm">Ctrl+Enter</kbd>
+								</div>
+							</div>
 						</li>
 					</ul>
 				</div>

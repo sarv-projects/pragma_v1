@@ -183,9 +183,13 @@ func (l *Lifecycle) cleanupStaleProcesses() {
 				if proc, err := os.FindProcess(pid); err == nil {
 					// Check if the process is still alive (signal 0 doesn't kill)
 					if err := proc.Signal(syscall.Signal(0)); err == nil {
-						_ = proc.Signal(os.Interrupt)
+						if err := proc.Signal(os.Interrupt); err != nil {
+							log.Printf("daemon: failed to send interrupt to stale process %d: %v", pid, err)
+						}
 						time.Sleep(200 * time.Millisecond)
-						_ = proc.Signal(syscall.SIGKILL)
+						if err := proc.Signal(syscall.SIGKILL); err != nil {
+							log.Printf("daemon: failed to send SIGKILL to stale process %d: %v", pid, err)
+						}
 					}
 				}
 			}

@@ -6,6 +6,9 @@ export const daemonReady = writable<boolean>(false);
 /** Raw health data from /api/health */
 export const healthData = writable<HealthData | null>(null);
 
+/** True when a health check is currently in progress. */
+export const isHealthChecking = writable<boolean>(false);
+
 /** True when both DeepSeek and Groq keys are configured (both required). */
 export const bothKeysReady = derived(healthData, ($d) =>
   Boolean($d?.checks?.deepseek_key?.ok && $d?.checks?.groq_key?.ok)
@@ -34,6 +37,7 @@ export interface HealthData {
 
 /** Fetch health status from the server. */
 export async function refreshHealthStatus(): Promise<void> {
+  isHealthChecking.set(true);
   try {
     const res = await fetch("/api/health");
     if (res.ok) {
@@ -43,5 +47,7 @@ export async function refreshHealthStatus(): Promise<void> {
     }
   } catch {
     daemonReady.set(false);
+  } finally {
+    isHealthChecking.set(false);
   }
 }

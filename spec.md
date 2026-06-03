@@ -623,7 +623,7 @@ All endpoints are on `localhost:3777`. POST endpoints reject non-localhost `Orig
 | `/api/approve-spec` | POST | — | Approve spec (alternative to WS action) |
 | `/api/approve-dag` | POST | — | Approve DAG (alternative to WS action) |
 | `/api/pause` | POST | — | Not yet implemented |
-| `/api/resume` | POST | `run_id` | Resume a run |
+| `/api/resume` | POST | `run_id` | Resume a run (uses 30-min timeout context to prevent resource leaks) |
 | `/api/analyze-image` | POST | — | Analyze uploaded image via Groq Scout vision |
 | `/api/select-profile` | POST | — | Auto-select build profile from description text |
 | `/api/run-project` | POST | `run_id` | Run docker compose up in project directory |
