@@ -414,8 +414,14 @@ ALWAYS include Dockerfile and docker-compose.yml in the files list. Every projec
 
 
 def _build_pass1_messages(system: str, manifest: dict, research: dict) -> list[dict]:
+    role_prompt = (
+        "ROLE: You are the Lead Software Architect. Your goal is to design a robust, scalable, "
+        "and complete system structure. Focus on: correct data models, comprehensive API routes, "
+        "proper dependency injection, and a logical file structure. Do not worry about minor "
+        "formatting yet; focus on architectural completeness."
+    )
     return [
-        {"role": "system", "content": system},
+        {"role": "system", "content": system + "\n\n" + role_prompt},
         {
             "role": "user",
             "content": f"Research context:\n{json.dumps(research)}\n\nRequirements:\n{json.dumps(manifest)}\n\nDraft the complete spec.json.",
@@ -424,21 +430,33 @@ def _build_pass1_messages(system: str, manifest: dict, research: dict) -> list[d
 
 
 def _build_pass2_messages(system: str, manifest: dict, research: dict, pass1_output: str) -> list[dict]:
+    role_prompt = (
+        "ROLE: You are the Security & Database Expert. Your goal is to critically review the "
+        "Architect's draft. Focus exclusively on: missing authentication/authorization checks, "
+        "SQL injection risks, missing database indexes, improper error handling, and ensuring "
+        "all local imports resolve. Fix any architectural gaps you find."
+    )
     return [
-        {"role": "system", "content": system},
+        {"role": "system", "content": system + "\n\n" + role_prompt},
         {"role": "user", "content": f"Research context:\n{json.dumps(research)}\n\nRequirements:\n{json.dumps(manifest)}"},
         {"role": "assistant", "content": pass1_output},
         {
             "role": "user",
-            "content": "Review the draft. Fix dependency cycles, missing error handling, and ensure all "
-            "interfaces match the schema. Provide the complete updated JSON.",
+            "content": "Review the draft. Fix dependency cycles, missing error handling, security gaps, "
+            "and ensure all interfaces match the schema. Provide the complete updated JSON.",
         },
     ]
 
 
 def _build_pass3_messages(system: str, pass2_output: str) -> list[dict]:
+    role_prompt = (
+        "ROLE: You are the Finalizer. Your goal is to ensure the spec is perfectly formatted, "
+        "consistent, and ready for code generation. Focus on: consistent naming conventions, "
+        "valid JSON structure, resolving all 'depends_on' links, and removing any redundancy. "
+        "Output ONLY the final, valid JSON object."
+    )
     return [
-        {"role": "system", "content": system},
+        {"role": "system", "content": system + "\n\n" + role_prompt},
         {
             "role": "user",
             "content": f"Clean and finalize this spec JSON (consistent naming, valid structure, no redundancy). "

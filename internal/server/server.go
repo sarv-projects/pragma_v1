@@ -147,6 +147,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/run-project", s.handleRunProject)
 	s.mux.HandleFunc("POST /api/analyze-image", s.handleAnalyzeImage)
 	s.mux.HandleFunc("POST /api/select-profile", s.handleSelectProfile)
+	s.mux.HandleFunc("POST /api/extend-project", s.handleExtendProjectHTTP)
+	s.mux.HandleFunc("POST /api/apply-delta", s.handleApplyDelta)
 
 	// WebSocket
 	s.mux.HandleFunc("/ws", s.handleWS)

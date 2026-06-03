@@ -6,6 +6,7 @@
 	import DagApproval from '$lib/components/DagApproval.svelte';
 	import GeneratingView from '$lib/components/GeneratingView.svelte';
 	import CompleteView from '$lib/components/CompleteView.svelte';
+	import RefineView from '$lib/components/RefineView.svelte';
 	import SetupGuide from '$lib/components/SetupGuide.svelte';
 	import PreCompileView from '$lib/components/PreCompileView.svelte';
 	import { phase, interviewDone, showPreCompile, errorMsg, resetStores, retryLastAction } from '$lib/stores/ws';
@@ -190,6 +191,10 @@
 	{:else}
 		<div class="flex-1 enter-from-below">
 			<ChatView />
+		</div>
+	{/if}
+</div>
+		<ChatView />
 		</div>
 	{/if}
 </div>

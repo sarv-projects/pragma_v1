@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { runResult, resetStores } from '$lib/stores/ws';
+	import { runResult, resetStores, phase, manifest } from '$lib/stores/ws';
+	import { checkpointManifest, checkpointSpec } from '$lib/stores/refine';
 
 	// Request notification permission on mount
 	$effect(() => {
@@ -182,6 +183,21 @@
 				class="w-full rounded-xl border border-[var(--border)] py-3 text-sm font-medium text-[var(--text-muted)] transition-fluid hover:bg-[var(--bg-hover)]"
 			>
 				Start New Project
+			</button>
+			<button
+				onclick={() => {
+					if (!$runResult || !$manifest) return;
+					checkpointManifest.set($manifest as Record<string, any>);
+					checkpointSpec.set({ files: [] }); // simplified: just use runResult as base
+					const runId = $runResult.output_path.split(/[/\\]/).pop();
+					if (runId) {
+						fetch('/api/notify-refine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ run_id: runId }) }).catch(() => {});
+					}
+					phase.set('refine');
+				}}
+				class="w-full rounded-xl border border-[var(--brand)]/30 bg-[var(--brand)]/10 py-3 text-sm font-medium text-[var(--brand)] transition-fluid hover:bg-[var(--brand)]/20"
+			>
+				Refine This Project
 			</button>
 		{:else}
 			<p class="text-center text-[var(--text-muted)]">Run complete!</p>

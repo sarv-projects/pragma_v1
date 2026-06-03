@@ -7,6 +7,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -228,7 +231,7 @@ func (s *Server) handleExtendProject(runID, content string) {
 		return
 	}
 
-	// Broadcast the delta spec to the frontend
+	// Broadcast the delta spec to the frontend (new format includes impact analysis)
 	msg, _ := json.Marshal(map[string]any{
 		"type":       "extend_project_ready",
 		"delta_spec": json.RawMessage(result),
@@ -236,4 +239,144 @@ func (s *Server) handleExtendProject(runID, content string) {
 	})
 	s.hub.broadcast <- msg
 	log.Printf("server: extend_project completed for run %s", runID)
+
+	// Also store the result in the run directory for the HTTP endpoint
+	resultPath := filepath.Join(s.config.Output.Directory, runID, ".extend_project_result.json")
+	_ = os.WriteFile(resultPath, result, 0644)
+}
+
+// handleExtendProjectHTTP serves the extend_project RPC via HTTP for the RefineView UI.
+func (s *Server) handleExtendProjectHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.hasDaemon() {
+		writeError(w, http.StatusServiceUnavailable, "daemon not running")
+		return
+	}
+
+	var req struct {
+		CheckpointManifest map[string]any `json:"checkpoint_manifest"`
+		CheckpointSpec     map[string]any `json:"checkpoint_spec"`
+		NewRequirements    string         `json:"new_requirements"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.NewRequirements == "" {
+		writeError(w, http.StatusBadRequest, "new_requirements is required")
+		return
+	}
+
+	args := map[string]any{
+		"checkpoint_manifest": req.CheckpointManifest,
+		"checkpoint_spec":     req.CheckpointSpec,
+		"new_requirements":    req.NewRequirements,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+
+	s.mu.RLock()
+	client := s.client
+	s.mu.RUnlock()
+
+	result, err := client.Call(ctx, "extend_project", args)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "extend_project RPC failed: "+err.Error())
+		return
+	}
+
+	// Parse the response (which now includes impact + delta)
+	var responseData map[string]any
+	if err := json.Unmarshal(result, &responseData); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to parse extend_project response")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, responseData)
+}
+
+// handleApplyDelta applies the approved delta spec to the run directory.
+func (s *Server) handleApplyDelta(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		RunID     string         `json:"run_id"`
+		DeltaSpec map[string]any `json:"delta_spec"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.RunID == "" || req.DeltaSpec == nil {
+		writeError(w, http.StatusBadRequest, "run_id and delta_spec are required")
+		return
+	}
+	// Validate runID: no path traversal
+	if strings.Contains(req.RunID, "..") || strings.Contains(req.RunID, "/") || strings.Contains(req.RunID, "\\") {
+		writeError(w, http.StatusBadRequest, "invalid run_id")
+		return
+	}
+
+	// Load the pipeline service for the run to apply the delta
+	state, err := pipeline.LoadCheckpoint(req.RunID, s.config.Output.Directory)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "run not found")
+		return
+	}
+
+	// Use the daemon's apply_delta RPC if it exists, otherwise fall back to manual file application
+	deltaSpecJSON, _ := json.Marshal(req.DeltaSpec)
+	args := map[string]any{
+		"run_id":     req.RunID,
+		"output_dir": filepath.Join(s.config.Output.Directory, req.RunID),
+		"delta_spec": json.RawMessage(deltaSpecJSON),
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Minute)
+	defer cancel()
+
+	s.mu.RLock()
+	client := s.client
+	s.mu.RUnlock()
+
+	result, err := client.Call(ctx, "apply_delta", args)
+	if err != nil {
+		// If apply_delta RPC doesn't exist, do a simple manual application
+		log.Printf("server: apply_delta RPC not available, falling back to manual file writing: %v", err)
+		// Manually write the files from the delta spec
+		if files, ok := req.DeltaSpec["files"].([]any); ok {
+			outputDir := filepath.Join(s.config.Output.Directory, req.RunID)
+			outputDirAbs, _ := filepath.Abs(outputDir)
+			for _, f := range files {
+				fileMap, ok := f.(map[string]any)
+				if !ok {
+					continue
+				}
+				pathVal, ok := fileMap["path"].(string)
+				if !ok || pathVal == "" {
+					continue
+				}
+				// SECURITY: validate path doesn't escape the output directory (prevent path traversal)
+				fullPath := filepath.Join(outputDir, pathVal)
+				fullPathAbs, _ := filepath.Abs(fullPath)
+				if !strings.HasPrefix(fullPathAbs, outputDirAbs) {
+					log.Printf("server: blocked path traversal attempt: %s", pathVal)
+					continue
+				}
+				content := ""
+				if c, ok := fileMap["content"].(string); ok {
+					content = c
+				}
+				if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err == nil {
+					_ = os.WriteFile(fullPath, []byte(content), 0644)
+				}
+			}
+		}
+		// Update the checkpoint spec in state (marshalling map to json.RawMessage)
+		deltaSpecBytes, _ := json.Marshal(req.DeltaSpec)
+		state.Spec = deltaSpecBytes
+		_ = pipeline.SaveCheckpoint(*state, s.config.Output.Directory)
+		writeJSON(w, http.StatusOK, map[string]any{"success": true, "updated_spec": state.Spec})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "result": string(result)})
 }

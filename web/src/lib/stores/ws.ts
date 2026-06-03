@@ -7,6 +7,7 @@
  */
 
 import { writable, derived, get } from "svelte/store";
+import { checkpointManifest, checkpointSpec } from './refine';
 
 export type Phase =
   | "idle"
@@ -17,6 +18,7 @@ export type Phase =
   | "dag_review"
   | "generating"
   | "complete"
+  | "refine"
   | "paused"
   | "error";
 
@@ -76,6 +78,9 @@ export const recentRuns = writable<RunSummary[]>([]);
 
 /** Profile auto-selected from project description; updated via profile_chosen events. */
 export const selectedProfile = writable<string>("fastapi-async");
+
+/** Tracks the result of the runtime smoke test (null = not run or passed). */
+export const runtimeValidationError = writable<{ message: string; logs: string } | null>(null);
 
 // Derived
 export const progress = derived(
@@ -263,6 +268,25 @@ function dispatch(msg: any) {
 
     case "log":
       // Could pipe to a debug panel; for now ignore.
+      break;
+
+    case "runtime_validation_error":
+      console.warn("[Pragma] Runtime smoke test failed:", msg.message);
+      runtimeValidationError.set(msg);
+      break;
+
+    case "runtime_validation_passed":
+      console.log("[Pragma] Runtime smoke test passed");
+      runtimeValidationError.set(null);
+      break;
+
+    case "refine_project":
+      // Server signals that refine mode is available — populate the refinement stores
+      if (msg.manifest && msg.spec) {
+        checkpointManifest.set(msg.manifest);
+        checkpointSpec.set(msg.spec);
+        phase.set("refine");
+      }
       break;
   }
 }

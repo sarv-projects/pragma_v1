@@ -106,3 +106,14 @@ type TestRunEvent struct {
 }
 
 func (TestRunEvent) eventTag() {}
+
+type RuntimeValidationErrorEvent struct {
+	Message string
+	Logs    string
+}
+
+func (RuntimeValidationErrorEvent) eventTag() {}
+
+type RuntimeValidationPassedEvent struct{}
+
+func (RuntimeValidationPassedEvent) eventTag() {}

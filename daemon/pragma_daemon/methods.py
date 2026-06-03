@@ -687,10 +687,47 @@ Output ONLY the Markdown content.
         checkpoint_spec: dict,
         new_requirements: str,
     ) -> dict:
-        """Merge old manifest with new requirements and produce a delta spec."""
+        """Merge old manifest with new requirements and produce an impact analysis + delta spec.
+        
+        The Impact Analyzer step outputs a human-readable description of what files will be
+        affected, what new files are needed, and what the overall risk of the change is.
+        The frontend can display this for user approval before the delta spec is applied.
+        """
         logger.info(f"Extending project with: {new_requirements[:100]}...")
 
-        prompt = (
+        # Phase 3a: Impact Analyzer — first pass to understand the scope of the change
+        impact_prompt = (
+            f"You are the Impact Analyzer. Before generating code, analyze the impact of this change.\n\n"
+            f"Current project manifest:\n{json.dumps(checkpoint_manifest, indent=2)[:3000]}\n\n"
+            f"New requirements: {new_requirements}\n\n"
+            f"Output a JSON object with this shape:\n"
+            f'{{"impact_summary": "plain English description of what changes and why", '
+            f'"affected_files": ["list of existing files that will need modification"], '
+            f'"new_files": ["list of new files to be created"], '
+            f'"risk_level": "low|medium|high", '
+            f'"risk_reasons": ["list of specific risks or breaking changes"]}}\n\n'
+            f"Output ONLY valid JSON."
+        )
+        
+        impact_analysis = {"impact_summary": "Pending analysis...", "affected_files": [], "new_files": [], "risk_level": "unknown", "risk_reasons": []}
+        try:
+            impact_resp = await self.ds.chat(
+                [{"role": "user", "content": impact_prompt}],
+                thinking=False,
+                max_tokens=2048,
+            )
+            text = impact_resp.content.strip()
+            if text.startswith("{"):
+                impact_analysis = json.loads(text)
+            else:
+                extracted = _extract_json(text)
+                if extracted:
+                    impact_analysis = json.loads(extracted)
+        except Exception as e:
+            logger.warning(f"Impact analysis failed: {e}. Continuing with delta spec generation.")
+
+        # Phase 3b: Delta Spec Generator — produce the actual code changes
+        delta_prompt = (
             f"You are extending an existing project with new requirements.\n\n"
             f"Existing manifest:\n{json.dumps(checkpoint_manifest, indent=2)[:3000]}\n\n"
             f"Existing spec summary (files already generated):\n"
@@ -702,9 +739,10 @@ Output ONLY the Markdown content.
             f"Output ONLY the JSON spec object."
         )
 
+        delta_spec = {"files": [], "error": "Failed to generate delta spec"}
         try:
             resp = await self.ds.chat(
-                [{"role": "user", "content": prompt}],
+                [{"role": "user", "content": delta_prompt}],
                 thinking=True,
                 reasoning_effort="medium",
                 max_tokens=16384,
@@ -720,10 +758,71 @@ Output ONLY the Markdown content.
                 else:
                     delta_spec = {"files": [], "error": "Failed to parse delta spec"}
         except Exception as e:
-            logger.warning(f"extend_project failed: {e}")
+            logger.warning(f"extend_project delta spec failed: {e}")
             delta_spec = {"files": [], "error": str(e)}
 
-        return delta_spec
+        return {
+            "impact": impact_analysis,
+            "delta": delta_spec,
+        }
+
+    async def fix_runtime_error(
+        self,
+        error_logs: str,
+        file_contract: dict,
+        current_content: str,
+        profile: dict,
+    ) -> dict:
+        """Analyze runtime error logs and generate a fixed version of the file."""
+        logger.info(f"Attempting to fix runtime error in {file_contract.get('path')}")
+        
+        prompt = (
+            "You are an expert debugging agent. A file failed to run correctly.\n\n"
+            f"File Path: {file_contract.get('path')}\n"
+            f"Original Contract: {json.dumps(file_contract)}\n\n"
+            f"Current Content:\n{current_content}\n\n"
+            f"Runtime Error Logs:\n{error_logs}\n\n"
+            "Analyze the error logs and the current content. Identify the root cause "
+            "(e.g., missing import, syntax error, wrong variable name, missing env var). "
+            "Output ONLY the complete, corrected source code. Do not include markdown "
+            "fences or explanations. Ensure the fix strictly adheres to the original contract."
+        )
+        
+        try:
+            # Use Groq for fast healing if available, otherwise DeepSeek
+            if self.groq:
+                resp = await self.groq.heal_code(
+                    [{"role": "user", "content": prompt}],
+                    max_tokens=8192
+                )
+                content = resp.content
+                input_tokens = resp.input_tokens
+                output_tokens = resp.output_tokens
+            else:
+                ds_resp = await self.ds.chat(
+                    [{"role": "user", "content": prompt}],
+                    thinking=False,
+                    max_tokens=8192,
+                )
+                content = ds_resp.content
+                input_tokens = ds_resp.usage.input_tokens
+                output_tokens = ds_resp.usage.output_tokens
+                
+            # Strip any accidental markdown fences
+            content = re.sub(r'^```(?:python|typescript|javascript|go)?\s*', '', content, flags=re.MULTILINE)
+            content = re.sub(r'\s*```$', '', content, flags=re.MULTILINE)
+            
+            return {
+                "content": content.strip(),
+                "usage": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cached_input_tokens": 0,
+                }
+            }
+        except Exception as e:
+            logger.warning(f"fix_runtime_error failed: {e}")
+            raise ValueError(f"Failed to fix runtime error: {e}") from e
 
     async def analyze_image(
         self,

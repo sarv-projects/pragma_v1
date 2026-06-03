@@ -585,6 +585,85 @@ func (s *Service) finishRun(ctx context.Context, runDir string, healedCount, tot
 		}
 	}
 
+	// Phase 2: Runtime Smoke Test Agent
+	// If docker-compose.yml exists, attempt to start the app and verify it runs.
+	composePath := filepath.Join(runDir, "docker-compose.yml")
+	if _, err := os.Stat(composePath); err == nil {
+		s.logEvent("info", "Running runtime smoke test via Docker Compose...")
+		
+		// 1. Build and start in detached mode with timeout
+		upCtx, upCancel := context.WithTimeout(ctx, 3*time.Minute)
+		defer upCancel()
+		upCmd := exec.CommandContext(upCtx, "docker", "compose", "up", "-d", "--build")
+		upCmd.Dir = runDir
+		if upOut, upErr := upCmd.CombinedOutput(); upErr != nil {
+			s.logEvent("warn", fmt.Sprintf("Docker compose up failed: %v. Output: %s", upErr, string(upOut)[:min(len(upOut), 500)]))
+		} else {
+			// 2. Poll for container readiness (up to 30s) instead of fixed sleep
+			pollCtx, pollCancel := context.WithTimeout(ctx, 30*time.Second)
+			pollDone := false
+			pollTicker := time.NewTicker(3 * time.Second)
+			pollDoneOrCancelled := func() bool {
+				select {
+				case <-pollCtx.Done():
+					return true
+				default:
+					return pollDone
+				}
+			}
+			for !pollDoneOrCancelled() {
+				<-pollTicker.C
+				psCmd := exec.Command("docker", "compose", "ps", "--format", "json")
+				psCmd.Dir = runDir
+				psOut, psErr := psCmd.CombinedOutput()
+				if psErr != nil {
+					continue
+				}
+				// Parse JSON output to check container states properly
+				var containers []struct {
+					Service string `json:"Service"`
+					Status  string `json:"Status"`
+				}
+				if err := json.Unmarshal(psOut, &containers); err == nil {
+					allRunning := true
+					for _, c := range containers {
+						// Only consider "running" or strings starting with "Up" as healthy
+						if !strings.HasPrefix(c.Status, "Up") {
+							allRunning = false
+							break
+						}
+					}
+					if allRunning && len(containers) > 0 {
+						s.logEvent("info", "Runtime smoke test passed: Containers are running.")
+						s.emit(RuntimeValidationPassedEvent{})
+						pollDone = true
+						break
+					}
+				}
+			}
+			pollCancel()
+			pollTicker.Stop()
+			
+			if !pollDone {
+				// Timed out or failed — fetch logs for the error event
+				logsCmd := exec.Command("docker", "compose", "logs", "--tail", "100")
+				logsCmd.Dir = runDir
+				if logsOut, logsErr := logsCmd.CombinedOutput(); logsErr == nil {
+					s.logEvent("warn", fmt.Sprintf("Runtime smoke test failed: Container did not start in time. Logs:\n%s", string(logsOut)[:min(len(logsOut), 1000)]))
+					s.emit(RuntimeValidationErrorEvent{
+						Message: "Application failed to start within 30 seconds. Check Docker logs for details.",
+						Logs:    string(logsOut)[:min(len(logsOut), 2000)],
+					})
+				}
+			}
+			
+			// 3. Clean up: stop and remove containers to leave the system clean
+			downCmd := exec.Command("docker", "compose", "down")
+			downCmd.Dir = runDir
+			_ = downCmd.Run() // Ignore errors on cleanup
+		}
+	}
+
 	// Git versioning: initialize a repo in the output directory
 	if _, err := exec.LookPath("git"); err == nil {
 		gitInit := exec.Command("git", "init")
